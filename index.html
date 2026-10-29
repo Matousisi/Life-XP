@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+	<meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Suivi d'Objectifs & XP</title>
+    <link rel="stylesheet" href="style.css">
+	<!-- AJOUT : bibliothèque Supabase -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+    <div class="container">
+        <!-- Menu latéral -->
+        <div class="sidebar">
+            <h1>🎯 Mes Objectifs</h1>
+            <div class="menu-tabs">
+                <button class="tab-button active" onclick="switchTab('categories')">📌 Catégories</button>
+                <button class="tab-button" onclick="switchTab('summary')">📊 Synthèse</button>
+            </div>
+            <div id="categories-tab" class="tab-content">
+                <div class="categories" id="categories"></div>
+                <div class="add-category">
+                    <input type="text" id="new-category" placeholder="Nouvelle catégorie">
+                    <button onclick="addCategory()">➕ Ajouter</button>
+                </div>
+            </div>
+            <div id="summary-tab" class="tab-content" style="display: none;">
+                <!-- Contenu généré par JavaScript -->
+            </div>
+        </div>
+
+        <!-- Contenu principal -->
+        <div class="main">
+            <!-- Contenu généré par JavaScript -->
+        </div>
+    </div>
+        <!-- AJOUT : écran de connexion (affiché/masqué par script.js) -->
+    <div id="login-overlay">
+        <div class="login-box">
+            <h2>🔐 Connexion</h2>
+            <input type="email" id="login-email" placeholder="Email">
+            <input type="password" id="login-password" placeholder="Mot de passe">
+            <button onclick="login()">Se connecter</button>
+        </div>
+    </div>
+	<script src="script.js"></script>
+</body>
+</html>
