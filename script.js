@@ -87,7 +87,7 @@ function toast(message, type = 'info') {
 //  FENÊTRES MODALES (remplacent alert / confirm / prompt)
 //  Chaque fonction renvoie une Promesse : on l'utilise avec await.
 // ------------------------------------------------------------
-function showModal({ title, bodyHTML = '', confirmText = 'Valider', cancelText = 'Annuler', danger = false, onConfirm }) {
+function showModal({ title, bodyHTML = '', confirmText = 'Valider', cancelText = 'Annuler', danger = false, onConfirm, onMount }) {
     return new Promise(resolve => {
         const overlay = document.getElementById('modal-overlay');
         const box = document.getElementById('modal-box');
@@ -143,6 +143,9 @@ function showModal({ title, bodyHTML = '', confirmText = 'Valider', cancelText =
         // Défilement automatique vers la ligne surlignée (table des niveaux)
         const highlight = box.querySelector('.xp-row-current');
         if (highlight) setTimeout(() => highlight.scrollIntoView({ block: 'center' }), 150);
+
+        // Permet de brancher des boutons à l'intérieur de la modale (ex. navigation du tableau)
+        if (onMount) onMount(box);
     });
 }
 
@@ -332,9 +335,23 @@ async function showXPTable() {
                     <tbody>${rowsHTML}</tbody>
                 </table>
             </div>
-            <p class="modal-hint">💡 Tu es actuellement au niveau ${currentLevel} — la ligne est surlignée.</p>`,
+            <div class="xp-table-nav">
+                <button class="btn btn-ghost" id="xp-top">↑ Haut du tableau</button>
+                <button class="btn btn-ghost" id="xp-mine">↓ Mon niveau</button>
+            </div>
+            <p class="modal-hint">💡 Tu es actuellement au niveau ${currentLevel} — la ligne est surlignée. Le tableau se déroule à l'intérieur du cadre.</p>`,
         confirmText: 'Fermer',
-        cancelText: null // simple consultation : pas de bouton "Annuler"
+        cancelText: null, // simple consultation : pas de bouton "Annuler"
+        onMount: (box) => {
+            const wrap = box.querySelector('.xp-table-wrap');
+            box.querySelector('#xp-top').addEventListener('click', () => {
+                wrap.scrollTo({ top: 0, behavior: 'smooth' });
+            });
+            box.querySelector('#xp-mine').addEventListener('click', () => {
+                const row = box.querySelector('.xp-row-current');
+                if (row) row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            });
+        }
     });
 }
 
