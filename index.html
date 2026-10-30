@@ -1,49 +1,68 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-	<meta charset="UTF-8">
+    <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Suivi d'Objectifs & XP</title>
+    <title>Suivi d'Objectifs &amp; XP</title>
+
+    <!-- Police moderne Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
     <link rel="stylesheet" href="style.css">
-	<!-- AJOUT : bibliothèque Supabase -->
+
+    <!-- Supabase (chargé une seule fois — il était en double avant) -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
 <body>
     <div class="container">
         <!-- Menu latéral -->
-        <div class="sidebar">
+        <aside class="sidebar">
             <h1>🎯 Mes Objectifs</h1>
-            <div class="menu-tabs">
-                <button class="tab-button active" onclick="switchTab('categories')">📌 Catégories</button>
-                <button class="tab-button" onclick="switchTab('summary')">📊 Synthèse</button>
-            </div>
-            <div id="categories-tab" class="tab-content">
+
+            <nav class="menu-tabs">
+                <button class="tab-button active" data-tab="categories">📌 Catégories</button>
+                <button class="tab-button" data-tab="summary">📊 Synthèse</button>
+            </nav>
+
+            <div class="tab-content">
                 <div class="categories" id="categories"></div>
                 <div class="add-category">
-                    <input type="text" id="new-category" placeholder="Nouvelle catégorie">
-                    <button onclick="addCategory()">➕ Ajouter</button>
+                    <input type="text" id="new-category" placeholder="Nouvelle catégorie" maxlength="50">
+                    <button id="btn-add-category" class="btn btn-primary" title="Ajouter la catégorie">➕</button>
                 </div>
             </div>
-            <div id="summary-tab" class="tab-content" style="display: none;">
-                <!-- Contenu généré par JavaScript -->
-            </div>
-        </div>
 
-        <!-- Contenu principal -->
-        <div class="main">
-            <!-- Contenu généré par JavaScript -->
-        </div>
+            <div class="sidebar-footer">
+                <div id="user-email" class="user-email"></div>
+                <button id="btn-logout" class="btn btn-ghost">🚪 Déconnexion</button>
+            </div>
+        </aside>
+
+        <!-- Contenu principal (généré par script.js) -->
+        <main class="main"></main>
     </div>
-        <!-- AJOUT : écran de connexion (affiché/masqué par script.js) -->
+
+    <!-- Notifications toast (générées par script.js) -->
+    <div id="toast-container"></div>
+
+    <!-- Fenêtres modales : remplacent alert / confirm / prompt -->
+    <div id="modal-overlay">
+        <div id="modal-box" class="modal-box"></div>
+    </div>
+
+    <!-- Écran de connexion -->
     <div id="login-overlay">
         <div class="login-box">
-            <h2>🔐 Connexion</h2>
+            <h2>🎯 Mes Objectifs</h2>
+            <p class="login-sub">Connecte-toi pour retrouver ta progression</p>
             <input type="email" id="login-email" placeholder="Email">
             <input type="password" id="login-password" placeholder="Mot de passe">
-            <button onclick="login()">Se connecter</button>
+            <button id="btn-login" class="btn btn-primary">Se connecter</button>
         </div>
     </div>
-	<script src="script.js"></script>
+
+    <script src="script.js"></script>
 </body>
 </html>
