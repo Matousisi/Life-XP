@@ -692,7 +692,9 @@ input:focus {
 #modal-overlay.visible { opacity: 1; }
 
 .modal-box {
-    width: min(420px, calc(100vw - 40px));
+    width: min(480px, calc(100vw - 40px));
+    max-height: 90vh;
+    overflow-y: auto;
     background: rgba(22, 24, 38, 0.95);
     border: 1px solid var(--border);
     border-radius: 16px;
@@ -781,11 +783,16 @@ input:focus {
 .btn-xp-table { padding: 8px 14px; font-size: 0.8em; }
 
 .xp-table-wrap {
-    max-height: 320px;
+    /* Le tableau défile DANS ce cadre, dimensionné selon l'écran */
+    max-height: min(60vh, 480px);
     overflow-y: auto;
     border: 1px solid var(--border);
     border-radius: 10px;
+    overscroll-behavior: contain;
 }
+
+.xp-table-nav { display: flex; gap: 10px; margin-top: 10px; }
+.xp-table-nav .btn { flex: 1; padding: 8px 10px; font-size: 0.82em; }
 
 .xp-table { width: 100%; border-collapse: collapse; font-size: 0.82em; }
 
