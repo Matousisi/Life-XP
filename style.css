@@ -776,6 +776,59 @@ input:focus {
 .login-box .btn { width: 100%; padding: 11px; }
 
 /* ============================================================
+   TABLE DES NIVEAUX + BOUTON "+"
+   ============================================================ */
+.btn-xp-table { padding: 8px 14px; font-size: 0.8em; }
+
+.xp-table-wrap {
+    max-height: 320px;
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+}
+
+.xp-table { width: 100%; border-collapse: collapse; font-size: 0.82em; }
+
+.xp-table thead th {
+    position: sticky;
+    top: 0;
+    background: rgba(22, 24, 38, 0.97);
+    padding: 9px 10px;
+    text-align: left;
+    color: var(--text-secondary);
+    font-size: 0.85em;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-bottom: 1px solid var(--border);
+}
+
+.xp-table td {
+    padding: 6px 10px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    color: var(--text-primary);
+}
+
+.xp-table tbody tr:hover { background: var(--bg-elevated-2); }
+
+.xp-table th:nth-child(2), .xp-table th:nth-child(3),
+.xp-table td:nth-child(2), .xp-table td:nth-child(3) { text-align: right; }
+
+.xp-row-current { background: rgba(139, 92, 246, 0.22); }
+.xp-row-current td {
+    color: #fff;
+    font-weight: 700;
+    border-bottom: 1px solid rgba(139, 92, 246, 0.5);
+}
+
+/* Croix blanche, bien lisible sur le dégradé violet */
+.btn-plus {
+    font-size: 1.25em;
+    font-weight: 800;
+    padding: 7px 15px;
+    line-height: 1;
+}
+
+/* ============================================================
    ANIMATIONS
    ============================================================ */
 @keyframes fadeIn {
