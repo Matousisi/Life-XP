@@ -95,7 +95,7 @@ function showModal({ title, bodyHTML = '', confirmText = 'Valider', cancelText =
             <h3>${escapeHtml(title)}</h3>
             <div class="modal-body">${bodyHTML}</div>
             <div class="modal-actions">
-                <button class="btn btn-ghost" id="modal-cancel">${escapeHtml(cancelText)}</button>
+                ${cancelText ? `<button class="btn btn-ghost" id="modal-cancel">${escapeHtml(cancelText)}</button>` : ''}
                 <button class="btn ${danger ? 'btn-danger' : 'btn-primary'}" id="modal-confirm">${escapeHtml(confirmText)}</button>
             </div>`;
         overlay.style.display = 'flex';
@@ -122,7 +122,8 @@ function showModal({ title, bodyHTML = '', confirmText = 'Valider', cancelText =
             if (result === false) return; // invalide : on laisse la modale ouverte
             close(result);
         });
-        document.getElementById('modal-cancel').addEventListener('click', () => close(null));
+        const cancelBtn = document.getElementById('modal-cancel');
+        if (cancelBtn) cancelBtn.addEventListener('click', () => close(null));
         const onOverlayClick = (e) => { if (e.target === overlay) close(null); };
         overlay.addEventListener('click', onOverlayClick);
 
@@ -138,6 +139,10 @@ function showModal({ title, bodyHTML = '', confirmText = 'Valider', cancelText =
         // Focus automatique sur le premier champ
         const firstInput = box.querySelector('input, textarea');
         if (firstInput) setTimeout(() => { firstInput.focus(); firstInput.select && firstInput.select(); }, 60);
+
+        // Défilement automatique vers la ligne surlignée (table des niveaux)
+        const highlight = box.querySelector('.xp-row-current');
+        if (highlight) setTimeout(() => highlight.scrollIntoView({ block: 'center' }), 150);
     });
 }
 
@@ -300,6 +305,39 @@ function categoryStats(category) {
     return { totalXP, completedXP, percentage: totalXP > 0 ? Math.round((completedXP / totalXP) * 100) : 0 };
 }
 
+// ------------------------------------------------------------
+//  Table des niveaux (1 à 200) — affichée dans une modale
+// ------------------------------------------------------------
+async function showXPTable() {
+    const { level: currentLevel } = calculateXPAndLevel();
+    let cumulative = 0;
+    let rowsHTML = '';
+    for (let lvl = 1; lvl <= 200; lvl++) {
+        const step = lvl === 1 ? 0 : Math.floor(50 + (lvl * 2)); // XP pour passer du niveau précédent à celui-ci
+        if (lvl >= 2) cumulative += step;
+        rowsHTML += `<tr${lvl === currentLevel ? ' class="xp-row-current"' : ''}>
+            <td>Niveau ${lvl}</td>
+            <td>${lvl === 1 ? '—' : '+' + step}</td>
+            <td>${cumulative}</td>
+        </tr>`;
+    }
+    await showModal({
+        title: 'Table des niveaux (1 → 200)',
+        bodyHTML: `
+            <div class="xp-table-wrap">
+                <table class="xp-table">
+                    <thead>
+                        <tr><th>Niveau</th><th>XP pour y arriver</th><th>XP totale</th></tr>
+                    </thead>
+                    <tbody>${rowsHTML}</tbody>
+                </table>
+            </div>
+            <p class="modal-hint">💡 Tu es actuellement au niveau ${currentLevel} — la ligne est surlignée.</p>`,
+        confirmText: 'Fermer',
+        cancelText: null // simple consultation : pas de bouton "Annuler"
+    });
+}
+
 // En-tête commun à toutes les vues (titre + XP + niveau)
 function headerHTML(title, { back = false } = {}) {
     return `
@@ -315,6 +353,7 @@ function headerHTML(title, { back = false } = {}) {
                     <div class="progress-bar slim"><div class="progress-fill" id="level-progress-fill"></div></div>
                     <span class="level-progress-label"><span id="xp-to-next-level"></span> · <span id="level-progress-text"></span></span>
                 </div>
+                <button class="btn btn-ghost btn-xp-table" id="btn-xp-table" title="Voir la table des niveaux (1 à 200)">Niveaux</button>
             </div>
         </div>`;
 }
@@ -388,7 +427,7 @@ function buildCategoryCard(category) {
 function renderHomeView() {
     const main = document.querySelector('.main');
     const nb = Object.keys(data.categories).length;
-    main.innerHTML = headerHTML('Mes Catégories') + `
+    main.innerHTML = headerHTML('Catégories') + `
         <div class="categories-grid" id="categories-grid"></div>
         <p class="hint">${nb === 0
             ? '👋 Bienvenue ! Crée ta première catégorie dans le menu à gauche.'
@@ -558,7 +597,7 @@ function renderSummaryView() {
     const { level } = calculateXPAndLevel();
 
     const main = document.querySelector('.main');
-    main.innerHTML = headerHTML('📊 Synthèse globale') + `
+    main.innerHTML = headerHTML('Synthèse globale') + `
         <div class="stats-row">
             <div class="stat-card"><span class="stat-value">${completedXPAll}</span><span class="stat-label">XP gagnés</span></div>
             <div class="stat-card"><span class="stat-value">${completedObjectives}/${totalObjectives}</span><span class="stat-label">Objectifs complétés</span></div>
@@ -906,6 +945,12 @@ function wireStaticUI() {
     catInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') addCategory(catInput.value); });
 
     document.getElementById('btn-logout').addEventListener('click', logout);
+
+    // Bouton "Niveaux" : présent dans toutes les vues (contenu régénéré),
+    // on branche donc un seul écouteur global sur le document.
+    document.addEventListener('click', (e) => {
+        if (e.target.closest('#btn-xp-table')) showXPTable();
+    });
     document.getElementById('btn-login').addEventListener('click', login);
     document.getElementById('login-password').addEventListener('keydown', (e) => { if (e.key === 'Enter') login(); });
     document.getElementById('login-email').addEventListener('keydown', (e) => { if (e.key === 'Enter') document.getElementById('login-password').focus(); });
