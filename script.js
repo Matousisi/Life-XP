@@ -1,73 +1,167 @@
 // ============================================================
-//  🎯 SUIVI D'OBJECTIFS & XP — script.js (version 2)
-//  Corrections : accès aux catégories, clé "image" qui cassait
-//  tout, apostrophes dans les noms, bouton ✏️ pour renommer,
-//  envoi d'images vers Supabase Storage, design modernisé.
+//  🎯 SUIVI D'OBJECTIFS & XP — script.js (version 3)
+//  Nouveautés :
+//   • Chaque objectif a un TITRE + une DESCRIPTION
+//   • Sous-catégories imbriquées SANS limite de profondeur
+//     (Catégorie > Paris > Musées > …)
+//   • Migration automatique des anciennes données Supabase
 // ============================================================
 const SUPABASE_URL = 'https://gqjizrupxnpjzbhpnlby.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imdxaml6cnVweG5wanpiaHBubGJ5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTMyODMzOTQsImV4cCI6MjEwODg1OTM5NH0.oSyq9cgoAIAIah6d78FgkyBJ0xkHgAz9-wUy18It8VY';
-const STORAGE_BUCKET = 'images'; // nom du bucket Supabase Storage (à créer une fois, public)
+const STORAGE_BUCKET = 'images'; // bucket Supabase Storage (public)
 
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-// Données initiales de démonstration (utilisées uniquement si
-// rien n'est trouvé dans le cloud ni dans localStorage).
-let data = {
-    categories: {
-        "Sport": {
-            image: "images/sport.png",
-            "Trail": [
-                { name: "Courir 10 km", xp: 200, completed: false, date: null, image: "images/trail.png" },
-                { name: "Faire un trail de 20 km", xp: 500, completed: false, date: null, image: "images/trail.png" }
-            ],
-            "Natation": [
-                { name: "Nager 1 km", xp: 150, completed: false, date: null, image: "images/natation.png" }
-            ]
-        },
-        "Santé": {
-            image: "images/sante.png",
-            "Alimentation": [
-                { name: "Manger 5 fruits par jour", xp: 100, completed: false, date: null, image: "images/fruits.png" }
-            ]
+// ------------------------------------------------------------
+// MODÈLE DE DONNÉES
+//   data.categories = {
+//     "Voyage": {                      ← catégorie (racine)
+//       image: "…",                    ← optionnelle
+//       objectives: [ {name, description, xp, completed, date, image} ],
+//       children: {                     ← sous-catégories (récursif !)
+//         "Paris": {
+//           image: null, objectives: [],
+//           children: {
+//             "Musées": { image: null, objectives: [...], children: {} }
+//           }
+//         }
+//       }
+//     }
+//   }
+// ------------------------------------------------------------
+let data = { categories: {
+    "Sport": {
+        image: "images/sport.png",
+        objectives: [],
+        children: {
+            "Trail": {
+                image: null,
+                objectives: [
+                    { name: "Courir 10 km", description: "Un 10 km sur route, allure libre.", xp: 200, completed: false, date: null, image: "images/trail.png" },
+                    { name: "Faire un trail de 20 km", description: "Trail nature avec dénivelé, en autonomie.", xp: 500, completed: false, date: null, image: "images/trail.png" }
+                ],
+                children: {}
+            },
+            "Natation": {
+                image: null,
+                objectives: [
+                    { name: "Nager 1 km", description: "En continu, sans arrêt aux bassins.", xp: 150, completed: false, date: null, image: "images/natation.png" }
+                ],
+                children: {}
+            }
+        }
+    },
+    "Santé": {
+        image: "images/sante.png",
+        objectives: [],
+        children: {
+            "Alimentation": {
+                image: null,
+                objectives: [
+                    { name: "Manger 5 fruits par jour", description: "Cinq portions de fruits ou légumes chaque jour.", xp: 100, completed: false, date: null, image: "images/fruits.png" }
+                ],
+                children: {}
+            }
         }
     }
-};
+}};
 
-// État de navigation
-let currentCategory = null;
-let currentSubCategory = null;
+// État de navigation : chemin dans l'arbre, ex. ["Voyage", "Paris", "Musées"]
+let currentPath = [];
 let activeTab = 'categories';
+
+// État d'ouverture du menu (nœuds ouverts/fermés à la main)
+const uiExpanded = new Set();
+const uiCollapsed = new Set();
 
 // ============================================================
 //  OUTILS
 // ============================================================
-
-// 🔴 BUG CORRIGÉ : les noms contenant des apostrophes ou des
-// guillemets ("Rock'n'roll", "Bien-être") cassaient les anciens
-// onclick="...('...')". On n'utilise plus de onclick en dur :
-// les boutons sont branchés en JavaScript (addEventListener).
 function escapeHtml(str) {
     return String(str).replace(/[&<>"']/g, m => (
         { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]
     ));
 }
 
-// 🔴 BUG CORRIGÉ (cause du "je n'arrive plus à accéder") :
-// dans data.categories, la clé "image" est une CHAÎNE et non
-// un tableau d'objectifs. L'ancien code parcourait toutes les
-// clés et appelait .forEach dessus → plantage silencieux.
-// Cette fonction ne renvoie que les VRAIES sous-catégories.
-function getSubCategories(category) {
-    const subs = {};
-    if (!data.categories[category]) return subs;
-    for (const [key, value] of Object.entries(data.categories[category])) {
-        if (Array.isArray(value)) subs[key] = value;
+function newEmptyNode() {
+    return { image: null, objectives: [], children: {} };
+}
+
+// Renvoie le nœud correspondant à un chemin ["Catégorie", "Sous", "Sous-sous"]
+function getNode(path) {
+    if (path.length === 0) return null;
+    let node = data.categories[path[0]];
+    for (let i = 1; i < path.length && node; i++) {
+        node = node.children ? node.children[path[i]] : null;
     }
-    return subs;
+    return node;
+}
+
+const pathKey = path => path.join('\u0001');
+
+function samePath(a, b) {
+    return a.length === b.length && a.every((v, i) => v === b[i]);
+}
+
+function pathStartsWith(prefix, full) {
+    return prefix.length <= full.length && prefix.every((v, i) => v === full[i]);
+}
+
+function isExpanded(path) {
+    const k = pathKey(path);
+    return (pathStartsWith(path, currentPath) || uiExpanded.has(k)) && !uiCollapsed.has(k);
+}
+
+// Parcourt récursivement tous les objectifs d'un nœud
+function walkObjectives(node, fn) {
+    if (!node) return;
+    (node.objectives || []).forEach(fn);
+    for (const child of Object.values(node.children || {})) walkObjectives(child, fn);
 }
 
 // ------------------------------------------------------------
-//  NOTIFICATIONS (remplacent alert() — plus moderne)
+//  MIGRATION des anciennes données (format v2 → v3)
+//  L'ancien format plaçait les sous-catégories directement
+//  dans la catégorie ; le nouveau utilise objectives/children.
+// ------------------------------------------------------------
+function migrateObjectives(list) {
+    return (list || []).map(o => ({
+        name: o.name || 'Objectif',
+        description: o.description || '',
+        xp: Number(o.xp) || 0,
+        completed: !!o.completed,
+        date: o.date || null,
+        image: o.image || null
+    }));
+}
+
+function migrateNode(node) {
+    // Nouveau format déjà en place : on normalise juste les objectifs
+    if (node && Array.isArray(node.objectives) && node.children && typeof node.children === 'object') {
+        node.objectives = migrateObjectives(node.objectives);
+        if (!('image' in node)) node.image = null;
+        for (const [k, v] of Object.entries(node.children)) node.children[k] = migrateNode(v);
+        return node;
+    }
+    // Ancien format : { image?, "Sous-catégorie": [objectifs], … }
+    const fresh = newEmptyNode();
+    for (const [key, value] of Object.entries(node || {})) {
+        if (key === 'image' && typeof value === 'string') { fresh.image = value; continue; }
+        if (Array.isArray(value)) {
+            fresh.children[key] = { image: null, objectives: migrateObjectives(value), children: {} };
+        }
+    }
+    return fresh;
+}
+
+function migrateData() {
+    for (const name of Object.keys(data.categories)) {
+        data.categories[name] = migrateNode(data.categories[name]);
+    }
+}
+
+// ------------------------------------------------------------
+//  NOTIFICATIONS TOAST
 // ------------------------------------------------------------
 function toast(message, type = 'info') {
     const container = document.getElementById('toast-container');
@@ -84,8 +178,7 @@ function toast(message, type = 'info') {
 }
 
 // ------------------------------------------------------------
-//  FENÊTRES MODALES (remplacent alert / confirm / prompt)
-//  Chaque fonction renvoie une Promesse : on l'utilise avec await.
+//  FENÊTRES MODALES
 // ------------------------------------------------------------
 function showModal({ title, bodyHTML = '', confirmText = 'Valider', cancelText = 'Annuler', danger = false, onConfirm, onMount }) {
     return new Promise(resolve => {
@@ -113,13 +206,13 @@ function showModal({ title, bodyHTML = '', confirmText = 'Valider', cancelText =
         }
 
         const confirmBtn = document.getElementById('modal-confirm');
-        let busy = false; // protège contre le double-clic (pendant un envoi d'image par ex.)
+        let busy = false; // protège contre le double-clic
         confirmBtn.addEventListener('click', async () => {
             if (busy) return;
             busy = true;
             const result = onConfirm ? await onConfirm() : true;
             busy = false;
-            if (result === false) return; // invalide : on laisse la modale ouverte
+            if (result === false) return;
             close(result);
         });
         const cancelBtn = document.getElementById('modal-cancel');
@@ -136,7 +229,6 @@ function showModal({ title, bodyHTML = '', confirmText = 'Valider', cancelText =
         }
         document.addEventListener('keydown', onKey);
 
-        // Focus automatique sur le premier champ
         const firstInput = box.querySelector('input, textarea');
         if (firstInput) setTimeout(() => { firstInput.focus(); firstInput.select && firstInput.select(); }, 60);
 
@@ -144,7 +236,6 @@ function showModal({ title, bodyHTML = '', confirmText = 'Valider', cancelText =
         const highlight = box.querySelector('.xp-row-current');
         if (highlight) setTimeout(() => highlight.scrollIntoView({ block: 'center' }), 150);
 
-        // Permet de brancher des boutons à l'intérieur de la modale (ex. navigation du tableau)
         if (onMount) onMount(box);
     });
 }
@@ -171,12 +262,11 @@ async function showPrompt(title, { label = '', value = '', placeholder = '', typ
             return v;
         }
     });
-    return result; // texte saisi, ou null si annulé
+    return result;
 }
 
 // ------------------------------------------------------------
 //  ENVOI D'IMAGES VERS SUPABASE STORAGE
-//  (sujet 3) — nécessite un bucket public nommé "images"
 // ------------------------------------------------------------
 async function uploadImage(file) {
     const ext = (file.name.split('.').pop() || 'png').toLowerCase();
@@ -226,20 +316,25 @@ async function loadData() {
 
     if (error) {
         toast('Impossible de charger les données : ' + error.message, 'error');
+        migrateData();
         return;
     }
+
+    let migratedFromLocal = false;
 
     if (rows && rows.length > 0 && rows[0].data && Object.keys(rows[0].data).length > 0) {
         data = rows[0].data;
-        return;
+    } else {
+        // Première visite : migration de l'ancien localStorage (une seule fois)
+        const savedData = localStorage.getItem('objectivesData');
+        if (savedData) {
+            data = JSON.parse(savedData);
+            migratedFromLocal = true;
+        }
     }
 
-    // Première visite : migration de l'ancien localStorage (une seule fois)
-    const savedData = localStorage.getItem('objectivesData');
-    if (savedData) {
-        data = JSON.parse(savedData);
-        await saveData();
-    }
+    migrateData(); // convertit l'ancien format vers l'arborescence, sans rien perdre
+    if (migratedFromLocal) await saveData();
 }
 
 async function saveData() {
@@ -261,10 +356,8 @@ async function saveData() {
 // ============================================================
 function calculateXPAndLevel() {
     let totalXP = 0;
-    for (const category of Object.keys(data.categories)) {
-        for (const objectives of Object.values(getSubCategories(category))) {
-            objectives.forEach(o => { if (o.completed) totalXP += o.xp; });
-        }
+    for (const root of Object.values(data.categories)) {
+        walkObjectives(root, o => { if (o.completed) totalXP += o.xp; });
     }
 
     let level = 1;
@@ -297,19 +390,40 @@ function updateXPSummary() {
     if (lvlText) lvlText.textContent = progress + ' %';
 }
 
-function categoryStats(category) {
-    let totalXP = 0, completedXP = 0;
-    for (const objectives of Object.values(getSubCategories(category))) {
-        objectives.forEach(o => {
-            totalXP += o.xp;
-            if (o.completed) completedXP += o.xp;
-        });
-    }
-    return { totalXP, completedXP, percentage: totalXP > 0 ? Math.round((completedXP / totalXP) * 100) : 0 };
+// Statistiques d'un nœud (objectifs récursifs, toutes profondeurs)
+function nodeStats(node) {
+    let totalXP = 0, completedXP = 0, total = 0, done = 0;
+    walkObjectives(node, o => {
+        total++;
+        totalXP += o.xp;
+        if (o.completed) { done++; completedXP += o.xp; }
+    });
+    return { totalXP, completedXP, total, done, percentage: totalXP > 0 ? Math.round((completedXP / totalXP) * 100) : 0 };
+}
+
+// En-tête commun à toutes les vues. titleHTML accepte du HTML
+// (utilisé pour le fil d'Ariane Catégorie › Sous › Sous-sous).
+function headerHTML(titleHTML, { back = false } = {}) {
+    return `
+        <div class="header">
+            <div class="header-title">
+                ${back ? '<button class="btn btn-ghost back-btn" id="back-btn" title="Retour">←</button>' : ''}
+                <h2>${titleHTML}</h2>
+            </div>
+            <div class="xp-summary">
+                <span class="xp-pill">⚡ XP Total&nbsp;: <strong id="total-xp">0</strong></span>
+                <span class="xp-pill level-pill">🏅 Niveau&nbsp;: <strong id="level">1</strong></span>
+                <div class="level-progress">
+                    <div class="progress-bar slim"><div class="progress-fill" id="level-progress-fill"></div></div>
+                    <span class="level-progress-label"><span id="xp-to-next-level"></span> · <span id="level-progress-text"></span></span>
+                </div>
+                <button class="btn btn-ghost btn-xp-table" id="btn-xp-table" title="Voir la table des niveaux (1 à 200)">Niveaux</button>
+            </div>
+        </div>`;
 }
 
 // ------------------------------------------------------------
-//  Table des niveaux (1 à 200) — affichée dans une modale
+//  Table des niveaux (1 à 200)
 // ------------------------------------------------------------
 async function showXPTable() {
     const { level: currentLevel } = calculateXPAndLevel();
@@ -341,7 +455,7 @@ async function showXPTable() {
             </div>
             <p class="modal-hint">💡 Tu es actuellement au niveau ${currentLevel} — la ligne est surlignée. Le tableau se déroule à l'intérieur du cadre.</p>`,
         confirmText: 'Fermer',
-        cancelText: null, // simple consultation : pas de bouton "Annuler"
+        cancelText: null,
         onMount: (box) => {
             const wrap = box.querySelector('.xp-table-wrap');
             box.querySelector('#xp-top').addEventListener('click', () => {
@@ -355,28 +469,8 @@ async function showXPTable() {
     });
 }
 
-// En-tête commun à toutes les vues (titre + XP + niveau)
-function headerHTML(title, { back = false } = {}) {
-    return `
-        <div class="header">
-            <div class="header-title">
-                ${back ? '<button class="btn btn-ghost back-btn" id="back-btn" title="Retour">←</button>' : ''}
-                <h2>${escapeHtml(title)}</h2>
-            </div>
-            <div class="xp-summary">
-                <span class="xp-pill">⚡ XP Total&nbsp;: <strong id="total-xp">0</strong></span>
-                <span class="xp-pill level-pill">🏅 Niveau&nbsp;: <strong id="level">1</strong></span>
-                <div class="level-progress">
-                    <div class="progress-bar slim"><div class="progress-fill" id="level-progress-fill"></div></div>
-                    <span class="level-progress-label"><span id="xp-to-next-level"></span> · <span id="level-progress-text"></span></span>
-                </div>
-                <button class="btn btn-ghost btn-xp-table" id="btn-xp-table" title="Voir la table des niveaux (1 à 200)">Niveaux</button>
-            </div>
-        </div>`;
-}
-
 // ============================================================
-//  NAVIGATION ENTRE LES VUES
+//  NAVIGATION
 // ============================================================
 function setTab(tabName) {
     activeTab = tabName;
@@ -392,31 +486,30 @@ function switchTab(tabName) {
 }
 
 function renderMain() {
-    // Sécurité : si l'état pointe vers des données disparues, on remet à zéro
-    if (currentCategory && !data.categories[currentCategory]) { currentCategory = null; currentSubCategory = null; }
-    if (currentCategory && currentSubCategory && !Array.isArray(data.categories[currentCategory][currentSubCategory])) {
-        currentSubCategory = null;
+    // Sécurité : si le chemin pointe vers des nœuds disparus, on remonte
+    while (currentPath.length > 0 && !getNode(currentPath)) {
+        currentPath = currentPath.slice(0, -1);
     }
-    if (currentCategory && currentSubCategory) renderSubCategoryView();
-    else if (currentCategory) renderCategoryView();
-    else renderHomeView();
+    if (currentPath.length === 0) renderHomeView();
+    else renderNodeView();
 }
 
 function refreshAll() {
-    renderCategories();
+    renderSidebar();
     if (activeTab === 'summary') renderSummaryView();
     else renderMain();
 }
 
 // ============================================================
-//  VUE 1 — "Mes Catégories" (grille de cartes)
+//  VUE 1 — Accueil (grille des catégories)
 // ============================================================
 function buildCategoryCard(category) {
-    const { totalXP, completedXP, percentage } = categoryStats(category);
+    const root = data.categories[category];
+    const { totalXP, completedXP, percentage } = nodeStats(root);
     const card = document.createElement('div');
     card.className = 'category-card';
 
-    const imageUrl = data.categories[category].image;
+    const imageUrl = root.image;
     const visual = imageUrl
         ? `<img src="${escapeHtml(imageUrl)}" alt="" class="category-image" onerror="this.remove()">`
         : `<div class="category-image category-placeholder">${escapeHtml(category.charAt(0).toUpperCase())}</div>`;
@@ -432,11 +525,10 @@ function buildCategoryCard(category) {
         </div>`;
 
     card.addEventListener('click', () => {
-        currentCategory = category;
-        currentSubCategory = null;
+        currentPath = [category];
         setTab('categories');
         renderMain();
-        renderCategories();
+        renderSidebar();
     });
     return card;
 }
@@ -448,7 +540,7 @@ function renderHomeView() {
         <div class="categories-grid" id="categories-grid"></div>
         <p class="hint">${nb === 0
             ? '👋 Bienvenue ! Crée ta première catégorie dans le menu à gauche.'
-            : '💡 Astuce : clique sur une carte pour voir ses sous-catégories, ou déplie une catégorie dans le menu.'}</p>`;
+            : '💡 Astuce : clique sur une carte pour l\'explorer, ou déplie l\'arborescence dans le menu.'}</p>`;
 
     const grid = document.getElementById('categories-grid');
     for (const category of Object.keys(data.categories)) {
@@ -458,115 +550,107 @@ function renderHomeView() {
 }
 
 // ============================================================
-//  VUE 2 — Détail d'une catégorie (sous-catégories + création)
-//  ✨ SUJET 1 : le formulaire de création de sous-catégorie
-//  vit maintenant ICI, toujours accessible.
+//  VUE 2 — N'importe quel niveau de l'arbre
+//  (catégorie, sous-catégorie, sous-sous-catégorie, …)
+//  Affiche : fil d'Ariane, sous-catégories enfants,
+//  objectifs (titre + description), et formulaires d'ajout.
 // ============================================================
-function renderCategoryView() {
-    const category = currentCategory;
-    const subs = getSubCategories(category);
+function renderNodeView() {
+    const path = currentPath;
+    const node = getNode(path);
+    if (!node) { currentPath = []; renderHomeView(); return; }
+
+    const isCategory = path.length === 1;
+    const childrenNames = Object.keys(node.children);
+
+    // Fil d'Ariane cliquable : Voyage › Paris › Musées
+    const crumbs = path.map((seg, i) =>
+        `<span class="crumb${i === path.length - 1 ? ' crumb-current' : ''}" data-depth="${i}">${escapeHtml(seg)}</span>`
+    ).join('<span class="crumb-sep">›</span>');
 
     const main = document.querySelector('.main');
-    main.innerHTML = headerHTML(category, { back: true }) + `
+    main.innerHTML = headerHTML(`<span class="crumbs">${crumbs}</span>`, { back: true }) + `
         <div class="category-toolbar">
-            <button class="btn btn-ghost" id="btn-edit-image">🖼️ Changer l'image</button>
-            <button class="btn btn-ghost" id="btn-rename-category">✏️ Renommer</button>
-            <button class="btn btn-danger-ghost" id="btn-delete-category">🗑️ Supprimer</button>
+            ${isCategory ? `<button class="btn btn-ghost" id="btn-edit-image">🖼️ Changer l'image</button>` : ''}
+            <button class="btn btn-ghost" id="btn-rename-node">✏️ Renommer</button>
+            <button class="btn btn-danger-ghost" id="btn-delete-node">🗑️ Supprimer</button>
         </div>
-        <div class="subcategories-summary" id="subcategories-summary"></div>
+        <div class="subcategories-summary" id="children-summary"></div>
+        <div class="objectives" id="objectives"></div>
         <div class="card-form">
-            <h3>➕ Nouvelle sous-catégorie</h3>
+            <h3>Nouvel objectif</h3>
             <div class="form-row">
-                <input type="text" id="new-subcategory" placeholder="Ex. : Trail, Natation…" maxlength="50">
-                <button class="btn btn-primary" id="btn-add-subcategory">Ajouter</button>
+                <input type="text" id="new-objective" placeholder="Titre de l'objectif" maxlength="100">
+                <input type="number" id="new-xp" placeholder="XP" min="0" max="1000" value="100">
+                <button class="btn btn-primary" id="btn-add-objective">Ajouter</button>
+            </div>
+            <div class="form-row">
+                <input type="text" id="new-objective-desc" placeholder="📝 Description (optionnelle)">
+            </div>
+            <div class="form-row">
+                <input type="text" id="new-objective-image" placeholder="🖼️ URL de l'image (optionnel)">
             </div>
         </div>
-        ${Object.keys(subs).length === 0 ? '<p class="hint">Aucune sous-catégorie pour le moment — crée la première ci-dessous !</p>' : ''}`;
+        <div class="card-form">
+            <h3>Nouvelle sous-catégorie</h3>
+            <div class="form-row">
+                <input type="text" id="new-subcategory" placeholder="Ex. : Musées, Restaurants…" maxlength="50">
+                <button class="btn btn-primary" id="btn-add-subcategory">Ajouter</button>
+            </div>
+        </div>`;
 
-    // Cartes des sous-catégories
-    const summary = document.getElementById('subcategories-summary');
-    for (const [sub, objectives] of Object.entries(subs)) {
-        let t = 0, c = 0;
-        objectives.forEach(o => { t += o.xp; if (o.completed) c += o.xp; });
-        const pct = t > 0 ? Math.round((c / t) * 100) : 0;
-        const nbDone = objectives.filter(o => o.completed).length;
+    // ---- Cartes des sous-catégories enfants ----
+    const childrenSummary = document.getElementById('children-summary');
+    for (const childName of childrenNames) {
+        const child = node.children[childName];
+        const stats = nodeStats(child);
+        const hasSubChildren = Object.keys(child.children).length > 0;
 
         const card = document.createElement('div');
         card.className = 'subcategory-card';
         card.innerHTML = `
             <div class="subcategory-card-head">
-                <h4>${escapeHtml(sub)}</h4>
+                <h4>${escapeHtml(childName)}${hasSubChildren ? ' <span class="subtree-badge">📂</span>' : ''}</h4>
                 <div class="header-actions">
                     <button class="icon-btn edit" title="Renommer">✏️</button>
                     <button class="icon-btn delete" title="Supprimer">🗑️</button>
                 </div>
             </div>
             <div class="progress-container">
-                <div class="progress-bar"><div class="progress-fill" style="width:${pct}%"></div></div>
-                <span>${c} / ${t} XP · ${pct}&nbsp;% · ${nbDone}/${objectives.length} objectifs</span>
+                <div class="progress-bar"><div class="progress-fill" style="width:${stats.percentage}%"></div></div>
+                <span>${stats.completedXP} / ${stats.totalXP} XP · ${stats.percentage}&nbsp;% · ${stats.done}/${stats.total} objectifs</span>
             </div>`;
 
         card.addEventListener('click', (e) => {
             if (e.target.closest('.icon-btn')) return;
-            currentSubCategory = sub;
+            currentPath = [...path, childName];
             renderMain();
-            renderCategories();
+            renderSidebar();
         });
-        card.querySelector('.edit').addEventListener('click', (e) => { e.stopPropagation(); renameSubCategory(category, sub); });
-        card.querySelector('.delete').addEventListener('click', (e) => { e.stopPropagation(); deleteSubCategory(category, sub); });
-        summary.appendChild(card);
+        card.querySelector('.edit').addEventListener('click', (e) => { e.stopPropagation(); renameNode([...path, childName]); });
+        card.querySelector('.delete').addEventListener('click', (e) => { e.stopPropagation(); deleteNode([...path, childName]); });
+        childrenSummary.appendChild(card);
+    }
+    if (childrenNames.length === 0) {
+        childrenSummary.innerHTML = '<p class="hint">Aucune sous-catégorie ici — et bonne nouvelle : chaque sous-catégorie peut elle-même contenir des sous-catégories, sans limite de profondeur.</p>';
     }
 
-    // Boutons de la vue
-    document.getElementById('back-btn').addEventListener('click', () => {
-        currentCategory = null; currentSubCategory = null;
-        renderMain(); renderCategories();
-    });
-    document.getElementById('btn-rename-category').addEventListener('click', () => renameCategory(category));
-    document.getElementById('btn-edit-image').addEventListener('click', () => editCategoryImage(category));
-    document.getElementById('btn-delete-category').addEventListener('click', () => deleteCategory(category));
-
-    const subInput = document.getElementById('new-subcategory');
-    document.getElementById('btn-add-subcategory').addEventListener('click', () => addSubCategory(subInput.value));
-    subInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') addSubCategory(subInput.value); });
-
-    updateXPSummary();
-}
-
-// ============================================================
-//  VUE 3 — Détail d'une sous-catégorie (objectifs)
-// ============================================================
-function renderSubCategoryView() {
-    const category = currentCategory;
-    const sub = currentSubCategory;
-    const objectives = data.categories[category][sub];
-
-    const main = document.querySelector('.main');
-    main.innerHTML = headerHTML(`${category} › ${sub}`, { back: true }) + `
-        <div class="objectives" id="objectives"></div>
-        <div class="card-form">
-            <h3>➕ Nouvel objectif</h3>
-            <div class="form-row">
-                <input type="text" id="new-objective" placeholder="Ex. : Courir 10 km" maxlength="100">
-                <input type="number" id="new-xp" placeholder="XP" min="0" max="1000" value="100">
-                <button class="btn btn-primary" id="btn-add-objective">Ajouter</button>
-            </div>
-            <div class="form-row">
-                <input type="text" id="new-objective-image" placeholder="🖼️ URL de l'image (optionnel)">
-            </div>
-        </div>`;
-
+    // ---- Objectifs (titre + description) ----
     const list = document.getElementById('objectives');
-    objectives.forEach((objective, index) => {
+    node.objectives.forEach((objective, index) => {
         const el = document.createElement('div');
         el.className = `objective ${objective.completed ? 'completed' : ''}`;
         const imageHTML = objective.image
             ? `<img src="${escapeHtml(objective.image)}" alt="" class="objective-image" onerror="this.remove()">`
             : '';
+        const descHTML = objective.description
+            ? `<span class="objective-desc">${escapeHtml(objective.description)}</span>`
+            : '';
         el.innerHTML = `
             ${imageHTML}
             <div class="objective-text">
                 <span class="objective-name">${escapeHtml(objective.name)} <span class="xp-tag">+${objective.xp}&nbsp;XP</span></span>
+                ${descHTML}
                 ${objective.completed ? `<span class="completed-date">✅ Complété le ${escapeHtml(objective.date || '?')}</span>` : ''}
             </div>
             <div class="objective-actions">
@@ -574,41 +658,62 @@ function renderSubCategoryView() {
                 <button class="icon-btn complete" title="${objective.completed ? 'Remettre en non terminé' : 'Marquer comme complété'}">${objective.completed ? '↩️' : '✅'}</button>
                 <button class="icon-btn delete" title="Supprimer">🗑️</button>
             </div>`;
-        el.querySelector('.complete').addEventListener('click', () => completeObjective(category, sub, index));
-        el.querySelector('.delete').addEventListener('click', () => deleteObjective(category, sub, index));
-        el.querySelector('.edit').addEventListener('click', () => editObjective(category, sub, index));
+        el.querySelector('.complete').addEventListener('click', () => completeObjective(path, index));
+        el.querySelector('.delete').addEventListener('click', () => deleteObjective(path, index));
+        el.querySelector('.edit').addEventListener('click', () => editObjective(path, index));
         list.appendChild(el);
     });
-    if (objectives.length === 0) list.innerHTML = '<p class="hint">Aucun objectif ici — ajoute le premier ci-dessous !</p>';
+    if (node.objectives.length === 0) {
+        list.innerHTML = '<p class="hint">Aucun objectif à ce niveau — ajoute le premier ci-dessous.</p>';
+    }
 
+    // ---- Boutons de la vue ----
     document.getElementById('back-btn').addEventListener('click', () => {
-        currentSubCategory = null;
-        renderMain(); renderCategories();
+        currentPath = path.slice(0, -1);
+        renderMain();
+        renderSidebar();
+    });
+    document.getElementById('btn-rename-node').addEventListener('click', () => renameNode(path));
+    document.getElementById('btn-delete-node').addEventListener('click', () => deleteNode(path));
+    const imgBtn = document.getElementById('btn-edit-image');
+    if (imgBtn) imgBtn.addEventListener('click', () => editCategoryImage(path[0]));
+
+    // Fil d'Ariane : remonter à un ancêtre
+    main.querySelectorAll('.crumb').forEach(crumb => {
+        crumb.addEventListener('click', () => {
+            currentPath = path.slice(0, Number(crumb.dataset.depth) + 1);
+            renderMain();
+            renderSidebar();
+        });
     });
 
+    // ---- Formulaires ----
+    const subInput = document.getElementById('new-subcategory');
+    document.getElementById('btn-add-subcategory').addEventListener('click', () => addChild(path, subInput.value));
+    subInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') addChild(path, subInput.value); });
+
     const objInput = document.getElementById('new-objective');
+    const descInput = document.getElementById('new-objective-desc');
     const xpInput = document.getElementById('new-xp');
     const imgInput = document.getElementById('new-objective-image');
-    const submit = () => addObjective(objInput.value, xpInput.value, imgInput.value);
-    document.getElementById('btn-add-objective').addEventListener('click', submit);
-    [objInput, xpInput, imgInput].forEach(input => input.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); }));
+    const submitObjective = () => addObjective(path, objInput.value, descInput.value, xpInput.value, imgInput.value);
+    document.getElementById('btn-add-objective').addEventListener('click', submitObjective);
+    [objInput, descInput, xpInput, imgInput].forEach(input => input.addEventListener('keydown', (e) => { if (e.key === 'Enter') submitObjective(); }));
 
     updateXPSummary();
 }
 
 // ============================================================
-//  VUE 4 — Synthèse globale (onglet 📊)
+//  VUE 3 — Synthèse globale
 // ============================================================
 function renderSummaryView() {
     let totalObjectives = 0, completedObjectives = 0, totalXPAll = 0, completedXPAll = 0;
-    for (const category of Object.keys(data.categories)) {
-        for (const objectives of Object.values(getSubCategories(category))) {
-            objectives.forEach(o => {
-                totalObjectives++;
-                totalXPAll += o.xp;
-                if (o.completed) { completedObjectives++; completedXPAll += o.xp; }
-            });
-        }
+    for (const root of Object.values(data.categories)) {
+        walkObjectives(root, o => {
+            totalObjectives++;
+            totalXPAll += o.xp;
+            if (o.completed) { completedObjectives++; completedXPAll += o.xp; }
+        });
     }
     const pct = totalXPAll > 0 ? Math.round((completedXPAll / totalXPAll) * 100) : 0;
     const { level } = calculateXPAndLevel();
@@ -631,110 +736,100 @@ function renderSummaryView() {
 }
 
 // ============================================================
-//  MENU LATÉRAL (accordéon)
-//  ✨ SUJET 2 : bouton ✏️ pour renommer, à côté de 🗑️ et ➕.
+//  MENU LATÉRAL — arborescence récursive
+//  Chaque nœud : [▼] Nom  ➕ ✏️ 🗑️
 // ============================================================
-function renderCategories() {
+function renderSidebar() {
     const container = document.getElementById('categories');
     if (!container) return;
     container.innerHTML = '';
-
-    for (const [category] of Object.entries(data.categories)) {
-        const categoryElement = document.createElement('div');
-        categoryElement.className = 'category' + (currentCategory === category ? '' : ' collapsed');
-
-        const header = document.createElement('div');
-        header.className = 'category-header' + (currentCategory === category ? ' selected' : '');
-        header.innerHTML = `
-            <h3>${escapeHtml(category)}</h3>
-            <div class="header-actions">
-                <button class="icon-btn add" title="Nouvelle sous-catégorie">➕</button>
-                <button class="icon-btn edit" title="Renommer">✏️</button>
-                <button class="icon-btn delete" title="Supprimer">🗑️</button>
-                <span class="icon">▼</span>
-            </div>`;
-
-        header.addEventListener('click', (e) => {
-            const btn = e.target.closest('.icon-btn');
-            if (btn) {
-                e.stopPropagation();
-                if (btn.classList.contains('add')) {
-                    // ✨ SUJET 1 : accès direct à la création de sous-catégorie
-                    currentCategory = category;
-                    currentSubCategory = null;
-                    setTab('categories');
-                    renderMain();
-                    renderCategories();
-                    const input = document.getElementById('new-subcategory');
-                    if (input) input.focus();
-                } else if (btn.classList.contains('edit')) {
-                    renameCategory(category);
-                } else if (btn.classList.contains('delete')) {
-                    deleteCategory(category);
-                }
-                return;
-            }
-            e.stopPropagation();
-            const wasCollapsed = categoryElement.classList.contains('collapsed');
-            container.querySelectorAll('.category').forEach(c => c.classList.add('collapsed'));
-            if (wasCollapsed) {
-                categoryElement.classList.remove('collapsed');
-                currentCategory = category;
-                currentSubCategory = null;
-                setTab('categories');
-                renderMain();
-            } else if (currentCategory === category) {
-                currentCategory = null;
-                currentSubCategory = null;
-                renderMain();
-            }
-            renderCategories();
-        });
-
-        const subsEl = document.createElement('div');
-        subsEl.className = 'subcategories';
-        for (const sub of Object.keys(getSubCategories(category))) {
-            const subEl = document.createElement('div');
-            subEl.className = 'subcategory' + (currentCategory === category && currentSubCategory === sub ? ' active' : '');
-            subEl.innerHTML = `
-                <span>${escapeHtml(sub)}</span>
-                <div class="header-actions">
-                    <button class="icon-btn edit" title="Renommer">✏️</button>
-                    <button class="icon-btn delete" title="Supprimer">🗑️</button>
-                </div>`;
-            subEl.addEventListener('click', (e) => {
-                const btn = e.target.closest('.icon-btn');
-                if (btn) {
-                    e.stopPropagation();
-                    if (btn.classList.contains('edit')) renameSubCategory(category, sub);
-                    else if (btn.classList.contains('delete')) deleteSubCategory(category, sub);
-                    return;
-                }
-                e.stopPropagation();
-                currentCategory = category;
-                currentSubCategory = sub;
-                setTab('categories');
-                renderMain();
-                renderCategories();
-            });
-            subsEl.appendChild(subEl);
-        }
-
-        categoryElement.appendChild(header);
-        categoryElement.appendChild(subsEl);
-        container.appendChild(categoryElement);
+    for (const name of Object.keys(data.categories)) {
+        renderSidebarNode(name, [name], 0, container);
     }
 }
 
+function renderSidebarNode(name, path, depth, parentEl) {
+    const node = getNode(path);
+    if (!node) return;
+
+    const hasChildren = Object.keys(node.children).length > 0;
+    const selected = samePath(path, currentPath);
+    const expanded = hasChildren && isExpanded(path);
+
+    const wrap = document.createElement('div');
+    wrap.className = 'category' + (depth > 0 ? ' nested' : '') + (expanded ? '' : ' collapsed');
+
+    const header = document.createElement('div');
+    header.className = 'category-header' + (selected ? ' selected' : '');
+    header.innerHTML = `
+        <span class="node-title">
+            <span class="icon" style="${hasChildren ? '' : 'visibility:hidden'}">▼</span>
+            <h3>${escapeHtml(name)}</h3>
+        </span>
+        <div class="header-actions">
+            <button class="icon-btn add" title="Nouvelle sous-catégorie">➕</button>
+            <button class="icon-btn edit" title="Renommer">✏️</button>
+            <button class="icon-btn delete" title="Supprimer">🗑️</button>
+        </div>`;
+
+    header.addEventListener('click', (e) => {
+        const btn = e.target.closest('.icon-btn');
+        if (btn) {
+            e.stopPropagation();
+            if (btn.classList.contains('add')) {
+                // Navigation + focus sur le formulaire de création
+                uiCollapsed.delete(pathKey(path));
+                currentPath = path.slice();
+                setTab('categories');
+                renderMain();
+                renderSidebar();
+                const input = document.getElementById('new-subcategory');
+                if (input) input.focus();
+            } else if (btn.classList.contains('edit')) {
+                renameNode(path);
+            } else if (btn.classList.contains('delete')) {
+                deleteNode(path);
+            }
+            return;
+        }
+        // La flèche ▼ ouvre/ferme sans naviguer
+        if (e.target.closest('.icon')) {
+            e.stopPropagation();
+            const k = pathKey(path);
+            if (isExpanded(path)) { uiCollapsed.add(k); uiExpanded.delete(k); }
+            else { uiExpanded.add(k); uiCollapsed.delete(k); }
+            renderSidebar();
+            return;
+        }
+        // Clic sur le nom : navigation + ouverture
+        e.stopPropagation();
+        uiCollapsed.delete(pathKey(path));
+        currentPath = path.slice();
+        setTab('categories');
+        renderMain();
+        renderSidebar();
+    });
+
+    const childrenWrap = document.createElement('div');
+    childrenWrap.className = 'subcategories';
+    for (const childName of Object.keys(node.children)) {
+        renderSidebarNode(childName, [...path, childName], depth + 1, childrenWrap);
+    }
+
+    wrap.appendChild(header);
+    wrap.appendChild(childrenWrap);
+    parentEl.appendChild(wrap);
+}
+
 // ============================================================
-//  OPÉRATIONS — CATÉGORIES
+//  OPÉRATIONS — CATÉGORIES ET SOUS-CATÉGORIES (tout niveau)
 // ============================================================
 async function addCategory(value) {
     const name = (value || '').trim();
     if (!name) { toast('Donne un nom à ta catégorie.', 'error'); return; }
     if (data.categories[name]) { toast('Cette catégorie existe déjà.', 'error'); return; }
 
-    data.categories[name] = {};
+    data.categories[name] = newEmptyNode();
     const input = document.getElementById('new-category');
     if (input) input.value = '';
     await saveData();
@@ -742,34 +837,76 @@ async function addCategory(value) {
     toast(`Catégorie « ${name} » créée 🎉`, 'success');
 }
 
-async function renameCategory(category) {
-    const newName = await showPrompt('Renommer la catégorie', { label: 'Nouveau nom', value: category, placeholder: category });
-    if (!newName || newName === category) return;
-    if (data.categories[newName]) { toast('Cette catégorie existe déjà.', 'error'); return; }
+// Ajoute une sous-catégorie dans le nœud courant — à TOUT niveau
+async function addChild(path, value) {
+    const node = getNode(path);
+    if (!node) return;
+    const name = (value || '').trim();
+    if (!name) { toast('Donne un nom à ta sous-catégorie.', 'error'); return; }
+    if (node.children[name]) { toast('Ce nom existe déjà ici.', 'error'); return; }
 
-    // On reconstruit l'objet pour conserver l'ordre des catégories
-    data.categories = Object.fromEntries(
-        Object.entries(data.categories).map(([k, v]) => [k === category ? newName : k, v])
-    );
-    if (currentCategory === category) currentCategory = newName;
+    node.children[name] = newEmptyNode();
     await saveData();
-    refreshAll();
-    toast('Catégorie renommée ✨', 'success');
+    renderSidebar();
+    renderMain();
+    toast(`Sous-catégorie « ${name} » créée 🎉`, 'success');
 }
 
-async function deleteCategory(category) {
-    const ok = await showConfirm('Supprimer la catégorie', `Supprimer « ${category} » et toutes ses sous-catégories ? Cette action est irréversible.`);
-    if (!ok) return;
+// Renomme un nœud à n'importe quel niveau
+async function renameNode(path) {
+    const oldName = path[path.length - 1];
+    const isCategory = path.length === 1;
+    const newName = await showPrompt(isCategory ? 'Renommer la catégorie' : 'Renommer la sous-catégorie', {
+        label: 'Nouveau nom',
+        value: oldName,
+        placeholder: oldName
+    });
+    if (!newName || newName === oldName) return;
 
-    delete data.categories[category];
-    if (currentCategory === category) { currentCategory = null; currentSubCategory = null; }
+    const parent = isCategory ? data.categories : getNode(path.slice(0, -1)).children;
+    if (parent[newName]) { toast('Ce nom existe déjà ici.', 'error'); return; }
+
+    // On reconstruit l'objet pour conserver l'ordre
+    const rebuilt = Object.fromEntries(
+        Object.entries(parent).map(([k, v]) => [k === oldName ? newName : k, v])
+    );
+    if (isCategory) data.categories = rebuilt;
+    else getNode(path.slice(0, -1)).children = rebuilt;
+
+    currentPath = [...path.slice(0, -1), newName];
     await saveData();
     refreshAll();
-    toast('Catégorie supprimée', 'success');
+    toast('Renommé ✨', 'success');
+}
+
+// Supprime un nœud (et toute sa descendance)
+async function deleteNode(path) {
+    const name = path[path.length - 1];
+    const isCategory = path.length === 1;
+    const ok = await showConfirm(
+        isCategory ? 'Supprimer la catégorie' : 'Supprimer la sous-catégorie',
+        `Supprimer « ${name} » et tout son contenu (sous-catégories et objectifs) ? Cette action est irréversible.`
+    );
+    if (!ok) return;
+
+    if (isCategory) {
+        delete data.categories[name];
+    } else {
+        const parentChildren = getNode(path.slice(0, -1)).children;
+        delete parentChildren[name];
+    }
+
+    // Si on se trouvait dans la branche supprimée, on remonte au parent
+    if (pathStartsWith(path, currentPath)) {
+        currentPath = path.slice(0, -1);
+    }
+    await saveData();
+    refreshAll();
+    toast('Supprimé', 'success');
 }
 
 // ------------------------------------------------------------
-//  Image d'une catégorie (sujet 3) : fichier OU URL
+//  Image d'une catégorie (upload Supabase Storage ou URL)
 // ------------------------------------------------------------
 async function editCategoryImage(category) {
     const current = data.categories[category].image || '';
@@ -803,101 +940,65 @@ async function editCategoryImage(category) {
 }
 
 // ============================================================
-//  OPÉRATIONS — SOUS-CATÉGORIES
+//  OPÉRATIONS — OBJECTIFS (titre + description)
 // ============================================================
-async function addSubCategory(value) {
-    if (!currentCategory) { toast("Sélectionne d'abord une catégorie.", 'error'); return; }
-    const name = (value || '').trim();
-    if (!name) { toast('Donne un nom à ta sous-catégorie.', 'error'); return; }
-    if (data.categories[currentCategory][name]) { toast('Cette sous-catégorie existe déjà.', 'error'); return; }
-
-    data.categories[currentCategory][name] = [];
-    await saveData();
-    renderCategories();
-    renderMain();
-    toast(`Sous-catégorie « ${name} » créée 🎉`, 'success');
-}
-
-async function renameSubCategory(category, sub) {
-    const newName = await showPrompt('Renommer la sous-catégorie', { label: 'Nouveau nom', value: sub, placeholder: sub });
-    if (!newName || newName === sub) return;
-    if (data.categories[category][newName]) { toast('Cette sous-catégorie existe déjà.', 'error'); return; }
-
-    const content = data.categories[category];
-    data.categories[category] = Object.fromEntries(
-        Object.entries(content).map(([k, v]) => [k === sub ? newName : k, v])
-    );
-    if (currentCategory === category && currentSubCategory === sub) currentSubCategory = newName;
-    await saveData();
-    refreshAll();
-    toast('Sous-catégorie renommée ✨', 'success');
-}
-
-async function deleteSubCategory(category, sub) {
-    const ok = await showConfirm('Supprimer la sous-catégorie', `Supprimer « ${sub} » et tous ses objectifs ? Cette action est irréversible.`);
-    if (!ok) return;
-
-    delete data.categories[category][sub];
-    if (currentCategory === category && currentSubCategory === sub) currentSubCategory = null;
-    await saveData();
-    refreshAll();
-    toast('Sous-catégorie supprimée', 'success');
-}
-
-// ============================================================
-//  OPÉRATIONS — OBJECTIFS
-// ============================================================
-async function addObjective(nameValue, xpValue, imageValue) {
-    if (!currentCategory || !currentSubCategory) { toast("Sélectionne d'abord une sous-catégorie.", 'error'); return; }
+async function addObjective(path, nameValue, descValue, xpValue, imageValue) {
+    const node = getNode(path);
+    if (!node) return;
 
     const name = (nameValue || '').trim();
+    const description = (descValue || '').trim();
     const xp = parseInt(xpValue, 10);
     const image = (imageValue || '').trim() || null;
 
     if (!name || isNaN(xp) || xp < 0 || xp > 1000) {
-        toast('Champs invalides (XP entre 0 et 1000).', 'error');
+        toast('Champs invalides : titre obligatoire, XP entre 0 et 1000.', 'error');
         return;
     }
 
-    data.categories[currentCategory][currentSubCategory].push({
-        name, xp, completed: false, date: null, image
-    });
+    node.objectives.push({ name, description, xp, completed: false, date: null, image });
     await saveData();
-    renderSubCategoryView();
+    renderNodeView();
     toast('Objectif ajouté 🎯', 'success');
 }
 
-async function editObjective(category, sub, index) {
-    const o = data.categories[category][sub][index];
+async function editObjective(path, index) {
+    const node = getNode(path);
+    const o = node.objectives[index];
     const result = await showModal({
         title: "Modifier l'objectif",
         bodyHTML: `
-            <label>Nom</label>
+            <label>Titre</label>
             <input type="text" id="edit-obj-name" value="${escapeHtml(o.name)}" maxlength="100">
+            <label>Description</label>
+            <textarea id="edit-obj-desc" maxlength="500">${escapeHtml(o.description || '')}</textarea>
             <label>XP (0 à 1000)</label>
             <input type="number" id="edit-obj-xp" value="${o.xp}" min="0" max="1000">`,
         confirmText: 'Enregistrer',
         onConfirm: () => {
             const name = document.getElementById('edit-obj-name').value.trim();
+            const description = document.getElementById('edit-obj-desc').value.trim();
             const xp = parseInt(document.getElementById('edit-obj-xp').value, 10);
             if (!name || isNaN(xp) || xp < 0 || xp > 1000) {
                 toast('Champs invalides (XP entre 0 et 1000).', 'error');
                 return false;
             }
-            return { name, xp };
+            return { name, description, xp };
         }
     });
     if (!result) return;
 
     o.name = result.name;
+    o.description = result.description;
     o.xp = result.xp;
     await saveData();
-    renderSubCategoryView();
+    renderNodeView();
     toast('Objectif modifié ✨', 'success');
 }
 
-async function completeObjective(category, sub, index) {
-    const o = data.categories[category][sub][index];
+async function completeObjective(path, index) {
+    const node = getNode(path);
+    const o = node.objectives[index];
 
     if (o.completed) {
         const ok = await showConfirm('Annuler la complétion', `Remettre « ${o.name} » en non terminé (l'XP sera retirée) ?`, { confirmText: 'Annuler la complétion' });
@@ -905,7 +1006,7 @@ async function completeObjective(category, sub, index) {
         o.completed = false;
         o.date = null;
         await saveData();
-        renderSubCategoryView();
+        renderNodeView();
         toast('Objectif remis en cours', 'info');
         return;
     }
@@ -920,18 +1021,19 @@ async function completeObjective(category, sub, index) {
     o.completed = true;
     o.date = date;
     await saveData();
-    renderSubCategoryView();
+    renderNodeView();
     toast(`+${o.xp} XP — bravo ! 🎉`, 'success');
 }
 
-async function deleteObjective(category, sub, index) {
-    const o = data.categories[category][sub][index];
+async function deleteObjective(path, index) {
+    const node = getNode(path);
+    const o = node.objectives[index];
     const ok = await showConfirm("Supprimer l'objectif", `Supprimer « ${o.name} » ?`);
     if (!ok) return;
 
-    data.categories[category][sub].splice(index, 1);
+    node.objectives.splice(index, 1);
     await saveData();
-    renderSubCategoryView();
+    renderNodeView();
     toast('Objectif supprimé', 'success');
 }
 
@@ -940,14 +1042,13 @@ async function deleteObjective(category, sub, index) {
 // ============================================================
 async function init() {
     await loadData();
-    renderCategories();
+    renderSidebar();
     setTab('categories');
     renderMain();
     updateXPSummary();
     refreshAuthUI();
 }
 
-// Branchement unique des éléments statiques de index.html
 let staticUIWired = false;
 function wireStaticUI() {
     if (staticUIWired) return;
@@ -968,6 +1069,7 @@ function wireStaticUI() {
     document.addEventListener('click', (e) => {
         if (e.target.closest('#btn-xp-table')) showXPTable();
     });
+
     document.getElementById('btn-login').addEventListener('click', login);
     document.getElementById('login-password').addEventListener('keydown', (e) => { if (e.key === 'Enter') login(); });
     document.getElementById('login-email').addEventListener('keydown', (e) => { if (e.key === 'Enter') document.getElementById('login-password').focus(); });
@@ -976,7 +1078,6 @@ function wireStaticUI() {
 window.onload = async function () {
     wireStaticUI();
 
-    // Supabase vérifie s'il a gardé une session
     const { data: { session } } = await sb.auth.getSession();
     if (session) {
         await init();
