@@ -157,6 +157,21 @@ body {
     white-space: nowrap;
 }
 
+/* Groupe flèche + nom dans l'en-tête d'un nœud du menu */
+.node-title {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+    flex: 1;
+}
+
+/* Niveaux imbriqués du menu : indentation + texte plus petit */
+.category.nested { margin-left: 6px; margin-bottom: 6px; }
+.category.nested .category-header h3 { font-size: 0.85em; }
+.category.nested .icon { font-size: 0.65em; }
+.category.nested .icon-btn { font-size: 0.75em; }
+
 .header-actions { display: flex; gap: 4px; align-items: center; flex-shrink: 0; }
 
 .category-header .icon {
@@ -246,6 +261,27 @@ input:focus {
     border-color: var(--accent);
     box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.25);
 }
+
+/* Zones de texte multi-lignes (description des objectifs) */
+textarea {
+    padding: 9px 12px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--bg-elevated-2);
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 0.9em;
+    resize: vertical;
+    min-height: 60px;
+}
+
+textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(139, 92, 246, 0.25);
+}
+
+.modal-body textarea { width: 100%; }
 
 /* ---- Bas de la barre latérale : compte + déconnexion ---- */
 .sidebar-footer {
@@ -343,6 +379,13 @@ input:focus {
     -webkit-text-fill-color: transparent;
     overflow-wrap: anywhere;
 }
+
+/* Fil d'Ariane cliquable : Voyage › Paris › Musées */
+.crumbs { display: inline-flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.crumb { cursor: pointer; }
+.crumb:hover { text-decoration: underline; }
+.crumb-current { font-weight: 800; cursor: default; }
+.crumb-sep { color: var(--text-secondary); opacity: 0.7; font-size: 0.8em; }
 
 .xp-summary { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
 
@@ -557,6 +600,17 @@ input:focus {
 .objective-text { display: flex; flex-direction: column; gap: 5px; min-width: 0; flex: 1; }
 
 .objective-name { font-weight: 600; overflow-wrap: anywhere; }
+
+/* Description de l'objectif (sous le titre) */
+.objective-desc {
+    font-size: 0.85em;
+    color: var(--text-secondary);
+    overflow-wrap: anywhere;
+    white-space: pre-line;
+}
+
+/* Badge signalant une sous-catégorie qui contient elle-même des sous-catégories */
+.subtree-badge { font-size: 0.75em; opacity: 0.7; }
 
 .xp-tag {
     display: inline-block;
