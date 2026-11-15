@@ -575,10 +575,18 @@ function renderNodeView() {
             <button class="btn btn-ghost" id="btn-rename-node">✏️ Renommer</button>
             <button class="btn btn-danger-ghost" id="btn-delete-node">🗑️ Supprimer</button>
         </div>
+        <h3 class="section-title">📂 Sous-catégories <span class="section-count">${childrenNames.length}</span></h3>
         <div class="subcategories-summary" id="children-summary"></div>
+        <h3 class="section-title">🎯 Objectifs <span class="section-count">${node.objectives.length}</span></h3>
         <div class="objectives" id="objectives"></div>
         <div class="card-form">
-            <h3>Nouvel objectif</h3>
+            <div class="form-head">
+                <h3>Nouvel objectif</h3>
+                <div class="header-actions">
+                    <button class="btn btn-ghost btn-sm" id="btn-import-excel" title="Importer des objectifs depuis un fichier Excel (colonnes : Nom, XP)">📥 Importer Excel</button>
+                    <button class="btn btn-ghost btn-sm" id="btn-export-excel" title="Exporter tous les objectifs vers un fichier Excel">📤 Exporter</button>
+                </div>
+            </div>
             <div class="form-row">
                 <input type="text" id="new-objective" placeholder="Titre de l'objectif" maxlength="100">
                 <input type="number" id="new-xp" placeholder="XP" min="0" max="1000" value="100">
@@ -699,6 +707,9 @@ function renderNodeView() {
     const submitObjective = () => addObjective(path, objInput.value, descInput.value, xpInput.value, imgInput.value);
     document.getElementById('btn-add-objective').addEventListener('click', submitObjective);
     [objInput, descInput, xpInput, imgInput].forEach(input => input.addEventListener('keydown', (e) => { if (e.key === 'Enter') submitObjective(); }));
+
+    document.getElementById('btn-import-excel').addEventListener('click', importExcel);
+    document.getElementById('btn-export-excel').addEventListener('click', exportExcel);
 
     updateXPSummary();
 }
@@ -937,6 +948,111 @@ async function editCategoryImage(category) {
     await saveData();
     refreshAll();
     toast('Image mise à jour 🖼️', 'success');
+}
+
+// ------------------------------------------------------------
+//  IMPORT / EXPORT EXCEL (noms + XP)
+//  Import : colonnes « Nom » et « XP » (ou les 2 premières
+//  colonnes du fichier, avec ou sans ligne d'en-tête).
+//  Export : fichier .xlsx listant tous les objectifs de l'arbre.
+// ------------------------------------------------------------
+async function importExcel() {
+    if (typeof XLSX === 'undefined') { toast("La bibliothèque Excel n'est pas chargée.", 'error'); return; }
+    if (currentPath.length === 0) { toast("Ouvre d'abord la catégorie ou sous-catégorie cible.", 'error'); return; }
+
+    const picked = await showModal({
+        title: '📥 Importer des objectifs (Excel)',
+        bodyHTML: `
+            <p class="modal-hint">Sélectionne un fichier .xlsx, .xls ou .csv. Chaque ligne doit contenir un nom et un XP (colonnes « Nom » et « XP », ou simplement les deux premières colonnes). Les objectifs seront ajoutés dans « ${escapeHtml(currentPath[currentPath.length - 1])} ».</p>
+            <label>Fichier</label>
+            <input type="file" id="modal-file" accept=".xlsx,.xls,.csv">`,
+        confirmText: 'Importer',
+        onConfirm: () => {
+            const f = document.getElementById('modal-file').files[0];
+            if (!f) { toast('Choisis un fichier.', 'error'); return false; }
+            return { file: f };
+        }
+    });
+    if (!picked) return;
+
+    try {
+        const buffer = await picked.file.arrayBuffer();
+        const workbook = XLSX.read(buffer);
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+        if (!rows.length) { toast('Le fichier est vide.', 'error'); return; }
+
+        // Détection des colonnes Nom / XP (avec ou sans ligne d'en-tête)
+        let nameCol = 0, xpCol = 1, startRow = 0;
+        const headerRow = rows[0].map(c => String(c).toLowerCase());
+        const nameIdx = headerRow.findIndex(c => /^(nom|name|objectif|titre|title)/.test(c.trim()));
+        const xpIdx = headerRow.findIndex(c => /^(xp|points)/.test(c.trim()));
+        if (nameIdx !== -1 && xpIdx !== -1) { nameCol = nameIdx; xpCol = xpIdx; startRow = 1; }
+
+        const node = getNode(currentPath);
+        let added = 0, skipped = 0;
+        for (let i = startRow; i < rows.length; i++) {
+            const row = rows[i];
+            const name = String(row[nameCol] ?? '').trim();
+            if (!name) { skipped++; continue; }
+            let xp = parseInt(row[xpCol], 10);
+            if (isNaN(xp) || xp < 0) xp = 100;
+            if (xp > 1000) xp = 1000;
+            node.objectives.push({ name, description: '', xp, completed: false, date: null, image: null });
+            added++;
+        }
+
+        if (added > 0) {
+            await saveData();
+            renderNodeView();
+        }
+        toast(
+            added > 0
+                ? `${added} objectif(s) importé(s) 🎉${skipped ? ` (${skipped} ligne(s) ignorée(s))` : ''}`
+                : 'Aucun objectif trouvé dans le fichier.',
+            added > 0 ? 'success' : 'error'
+        );
+    } catch (err) {
+        toast('Import impossible : ' + err.message, 'error');
+    }
+}
+
+function exportExcel() {
+    try {
+        if (typeof XLSX === 'undefined') { toast("La bibliothèque Excel n'est pas chargée.", 'error'); return; }
+
+        const rows = [['Catégorie', 'Sous-catégories', 'Objectif', 'Description', 'XP', 'Complété', 'Date']];
+        for (const [catName, root] of Object.entries(data.categories)) {
+            walkWithPath(root, [catName], (o, path) => {
+                rows.push([
+                    path[0],
+                    path.slice(1).join(' › '),
+                    o.name,
+                    o.description || '',
+                    o.xp,
+                    o.completed ? 'Oui' : 'Non',
+                    o.date || ''
+                ]);
+            });
+        }
+
+        const ws = XLSX.utils.aoa_to_sheet(rows);
+        ws['!cols'] = [{ wch: 18 }, { wch: 26 }, { wch: 40 }, { wch: 40 }, { wch: 8 }, { wch: 10 }, { wch: 12 }];
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, 'Objectifs');
+        XLSX.writeFile(wb, 'objectifs.xlsx');
+        toast('Export téléchargé 📤', 'success');
+    } catch (err) {
+        toast('Export impossible : ' + err.message, 'error');
+    }
+}
+
+// Parcourt l'arbre en transmettant le chemin complet de chaque objectif
+function walkWithPath(node, path, fn) {
+    (node.objectives || []).forEach(o => fn(o, path));
+    for (const [name, child] of Object.entries(node.children || {})) {
+        walkWithPath(child, [...path, name], fn);
+    }
 }
 
 // ============================================================
