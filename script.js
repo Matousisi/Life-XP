@@ -535,12 +535,8 @@ function buildCategoryCard(category) {
 
 function renderHomeView() {
     const main = document.querySelector('.main');
-    const nb = Object.keys(data.categories).length;
     main.innerHTML = headerHTML('Catégories') + `
-        <div class="categories-grid" id="categories-grid"></div>
-        <p class="hint">${nb === 0
-            ? '👋 Bienvenue ! Crée ta première catégorie dans le menu à gauche.'
-            : '💡 Astuce : clique sur une carte pour l\'explorer, ou déplie l\'arborescence dans le menu.'}</p>`;
+        <div class="categories-grid" id="categories-grid"></div>`;
 
     const grid = document.getElementById('categories-grid');
     for (const category of Object.keys(data.categories)) {
@@ -574,38 +570,15 @@ function renderNodeView() {
             ${isCategory ? `<button class="btn btn-ghost" id="btn-edit-image">🖼️ Changer l'image</button>` : ''}
             <button class="btn btn-ghost" id="btn-rename-node">✏️ Renommer</button>
             <button class="btn btn-danger-ghost" id="btn-delete-node">🗑️ Supprimer</button>
+            <button class="btn btn-primary" id="btn-new-objective" title="Créer un nouvel objectif">+ Objectif</button>
+            <button class="btn btn-ghost" id="btn-new-subcategory" title="Créer une nouvelle sous-catégorie">+ Sous-catégorie</button>
+            <button class="btn btn-ghost btn-sm" id="btn-import-excel" title="Importer des objectifs depuis un fichier Excel (colonnes : Nom, XP)">📥 Importer Excel</button>
+            <button class="btn btn-ghost btn-sm" id="btn-export-excel" title="Exporter tous les objectifs vers un fichier Excel">📤 Exporter</button>
         </div>
-        <h3 class="section-title">📂 Sous-catégories <span class="section-count">${childrenNames.length}</span></h3>
+        <h3 class="section-title">Sous-catégories <span class="section-count">${childrenNames.length}</span></h3>
         <div class="subcategories-summary" id="children-summary"></div>
-        <h3 class="section-title">🎯 Objectifs <span class="section-count">${node.objectives.length}</span></h3>
-        <div class="objectives" id="objectives"></div>
-        <div class="card-form">
-            <div class="form-head">
-                <h3>Nouvel objectif</h3>
-                <div class="header-actions">
-                    <button class="btn btn-ghost btn-sm" id="btn-import-excel" title="Importer des objectifs depuis un fichier Excel (colonnes : Nom, XP)">📥 Importer Excel</button>
-                    <button class="btn btn-ghost btn-sm" id="btn-export-excel" title="Exporter tous les objectifs vers un fichier Excel">📤 Exporter</button>
-                </div>
-            </div>
-            <div class="form-row">
-                <input type="text" id="new-objective" placeholder="Titre de l'objectif" maxlength="100">
-                <input type="number" id="new-xp" placeholder="XP" min="0" max="1000" value="100">
-                <button class="btn btn-primary" id="btn-add-objective">Ajouter</button>
-            </div>
-            <div class="form-row">
-                <input type="text" id="new-objective-desc" placeholder="📝 Description (optionnelle)">
-            </div>
-            <div class="form-row">
-                <input type="text" id="new-objective-image" placeholder="🖼️ URL de l'image (optionnel)">
-            </div>
-        </div>
-        <div class="card-form">
-            <h3>Nouvelle sous-catégorie</h3>
-            <div class="form-row">
-                <input type="text" id="new-subcategory" placeholder="Ex. : Musées, Restaurants…" maxlength="50">
-                <button class="btn btn-primary" id="btn-add-subcategory">Ajouter</button>
-            </div>
-        </div>`;
+        <h3 class="section-title">Objectifs <span class="section-count">${node.objectives.length}</span></h3>
+        <div class="objectives" id="objectives"></div>`;
 
     // ---- Cartes des sous-catégories enfants ----
     const childrenSummary = document.getElementById('children-summary');
@@ -639,9 +612,7 @@ function renderNodeView() {
         card.querySelector('.delete').addEventListener('click', (e) => { e.stopPropagation(); deleteNode([...path, childName]); });
         childrenSummary.appendChild(card);
     }
-    if (childrenNames.length === 0) {
-        childrenSummary.innerHTML = '<p class="hint">Aucune sous-catégorie ici — et bonne nouvelle : chaque sous-catégorie peut elle-même contenir des sous-catégories, sans limite de profondeur.</p>';
-    }
+    if (childrenNames.length === 0) childrenSummary.style.display = 'none';
 
     // ---- Objectifs (titre + description) ----
     const list = document.getElementById('objectives');
@@ -671,9 +642,7 @@ function renderNodeView() {
         el.querySelector('.edit').addEventListener('click', () => editObjective(path, index));
         list.appendChild(el);
     });
-    if (node.objectives.length === 0) {
-        list.innerHTML = '<p class="hint">Aucun objectif à ce niveau — ajoute le premier ci-dessous.</p>';
-    }
+    if (node.objectives.length === 0) list.style.display = 'none';
 
     // ---- Boutons de la vue ----
     document.getElementById('back-btn').addEventListener('click', () => {
@@ -695,19 +664,9 @@ function renderNodeView() {
         });
     });
 
-    // ---- Formulaires ----
-    const subInput = document.getElementById('new-subcategory');
-    document.getElementById('btn-add-subcategory').addEventListener('click', () => addChild(path, subInput.value));
-    subInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') addChild(path, subInput.value); });
-
-    const objInput = document.getElementById('new-objective');
-    const descInput = document.getElementById('new-objective-desc');
-    const xpInput = document.getElementById('new-xp');
-    const imgInput = document.getElementById('new-objective-image');
-    const submitObjective = () => addObjective(path, objInput.value, descInput.value, xpInput.value, imgInput.value);
-    document.getElementById('btn-add-objective').addEventListener('click', submitObjective);
-    [objInput, descInput, xpInput, imgInput].forEach(input => input.addEventListener('keydown', (e) => { if (e.key === 'Enter') submitObjective(); }));
-
+    // ---- Boutons d'ajout (modales) et Excel ----
+    document.getElementById('btn-new-objective').addEventListener('click', () => openObjectiveModal(path));
+    document.getElementById('btn-new-subcategory').addEventListener('click', () => openSubCategoryModal(path));
     document.getElementById('btn-import-excel').addEventListener('click', importExcel);
     document.getElementById('btn-export-excel').addEventListener('click', exportExcel);
 
@@ -788,14 +747,8 @@ function renderSidebarNode(name, path, depth, parentEl) {
         if (btn) {
             e.stopPropagation();
             if (btn.classList.contains('add')) {
-                // Navigation + focus sur le formulaire de création
-                uiCollapsed.delete(pathKey(path));
-                currentPath = path.slice();
-                setTab('categories');
-                renderMain();
-                renderSidebar();
-                const input = document.getElementById('new-subcategory');
-                if (input) input.focus();
+                // Ouvre la modale de création, même sans naviguer
+                openSubCategoryModal(path);
             } else if (btn.classList.contains('edit')) {
                 renameNode(path);
             } else if (btn.classList.contains('delete')) {
@@ -821,14 +774,16 @@ function renderSidebarNode(name, path, depth, parentEl) {
         renderSidebar();
     });
 
-    const childrenWrap = document.createElement('div');
-    childrenWrap.className = 'subcategories';
-    for (const childName of Object.keys(node.children)) {
-        renderSidebarNode(childName, [...path, childName], depth + 1, childrenWrap);
-    }
-
     wrap.appendChild(header);
-    wrap.appendChild(childrenWrap);
+    // Uniquement s'il y a des enfants : évite le bloc vide sous le nom
+    if (hasChildren) {
+        const childrenWrap = document.createElement('div');
+        childrenWrap.className = 'subcategories';
+        for (const childName of Object.keys(node.children)) {
+            renderSidebarNode(childName, [...path, childName], depth + 1, childrenWrap);
+        }
+        wrap.appendChild(childrenWrap);
+    }
     parentEl.appendChild(wrap);
 }
 
@@ -1058,24 +1013,50 @@ function walkWithPath(node, path, fn) {
 // ============================================================
 //  OPÉRATIONS — OBJECTIFS (titre + description)
 // ============================================================
-async function addObjective(path, nameValue, descValue, xpValue, imageValue) {
+// Création d'un objectif via une modale (plus de formulaire en dur)
+async function openObjectiveModal(path) {
+    const result = await showModal({
+        title: 'Nouvel objectif',
+        bodyHTML: `
+            <label>Titre</label>
+            <input type="text" id="new-obj-name" maxlength="100" placeholder="Ex. : Visiter le Louvre">
+            <label>Description (optionnelle)</label>
+            <textarea id="new-obj-desc" maxlength="500"></textarea>
+            <label>XP (0 à 1000)</label>
+            <input type="number" id="new-obj-xp" value="100" min="0" max="1000">
+            <label>URL de l'image (optionnel)</label>
+            <input type="text" id="new-obj-image" placeholder="https://…">`,
+        confirmText: 'Ajouter',
+        onConfirm: () => {
+            const name = document.getElementById('new-obj-name').value.trim();
+            const description = document.getElementById('new-obj-desc').value.trim();
+            const xp = parseInt(document.getElementById('new-obj-xp').value, 10);
+            const image = document.getElementById('new-obj-image').value.trim() || null;
+            if (!name || isNaN(xp) || xp < 0 || xp > 1000) {
+                toast('Champs invalides : titre obligatoire, XP entre 0 et 1000.', 'error');
+                return false;
+            }
+            return { name, description, xp, image };
+        }
+    });
+    if (!result) return;
+
     const node = getNode(path);
     if (!node) return;
-
-    const name = (nameValue || '').trim();
-    const description = (descValue || '').trim();
-    const xp = parseInt(xpValue, 10);
-    const image = (imageValue || '').trim() || null;
-
-    if (!name || isNaN(xp) || xp < 0 || xp > 1000) {
-        toast('Champs invalides : titre obligatoire, XP entre 0 et 1000.', 'error');
-        return;
-    }
-
-    node.objectives.push({ name, description, xp, completed: false, date: null, image });
+    node.objectives.push({ ...result, completed: false, date: null });
     await saveData();
     renderNodeView();
     toast('Objectif ajouté 🎯', 'success');
+}
+
+// Création d'une sous-catégorie via une modale
+async function openSubCategoryModal(path) {
+    const name = await showPrompt('Nouvelle sous-catégorie', {
+        label: 'Nom de la sous-catégorie',
+        placeholder: 'Ex. : Musées, Restaurants…'
+    });
+    if (!name) return;
+    await addChild(path, name);
 }
 
 async function editObjective(path, index) {
@@ -1089,17 +1070,20 @@ async function editObjective(path, index) {
             <label>Description</label>
             <textarea id="edit-obj-desc" maxlength="500">${escapeHtml(o.description || '')}</textarea>
             <label>XP (0 à 1000)</label>
-            <input type="number" id="edit-obj-xp" value="${o.xp}" min="0" max="1000">`,
+            <input type="number" id="edit-obj-xp" value="${o.xp}" min="0" max="1000">
+            <label>URL de l'image (optionnel)</label>
+            <input type="text" id="edit-obj-image" value="${escapeHtml(o.image || '')}" placeholder="https://…">`,
         confirmText: 'Enregistrer',
         onConfirm: () => {
             const name = document.getElementById('edit-obj-name').value.trim();
             const description = document.getElementById('edit-obj-desc').value.trim();
             const xp = parseInt(document.getElementById('edit-obj-xp').value, 10);
+            const image = document.getElementById('edit-obj-image').value.trim() || null;
             if (!name || isNaN(xp) || xp < 0 || xp > 1000) {
                 toast('Champs invalides (XP entre 0 et 1000).', 'error');
                 return false;
             }
-            return { name, description, xp };
+            return { name, description, xp, image };
         }
     });
     if (!result) return;
@@ -1107,6 +1091,7 @@ async function editObjective(path, index) {
     o.name = result.name;
     o.description = result.description;
     o.xp = result.xp;
+    o.image = result.image;
     await saveData();
     renderNodeView();
     toast('Objectif modifié ✨', 'success');
