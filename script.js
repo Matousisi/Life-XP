@@ -573,7 +573,6 @@ function renderNodeView() {
             <button class="btn btn-primary" id="btn-new-objective" title="Créer un nouvel objectif">+ Objectif</button>
             <button class="btn btn-ghost" id="btn-new-subcategory" title="Créer une nouvelle sous-catégorie">+ Sous-catégorie</button>
             <button class="btn btn-ghost btn-sm" id="btn-import-excel" title="Importer des objectifs depuis un fichier Excel (colonnes : Nom, XP)">📥 Importer Excel</button>
-            <button class="btn btn-ghost btn-sm" id="btn-export-excel" title="Exporter tous les objectifs vers un fichier Excel">📤 Exporter</button>
         </div>
         <h3 class="section-title">Sous-catégories <span class="section-count">${childrenNames.length}</span></h3>
         <div class="subcategories-summary" id="children-summary"></div>
@@ -668,7 +667,6 @@ function renderNodeView() {
     document.getElementById('btn-new-objective').addEventListener('click', () => openObjectiveModal(path));
     document.getElementById('btn-new-subcategory').addEventListener('click', () => openSubCategoryModal(path));
     document.getElementById('btn-import-excel').addEventListener('click', importExcel);
-    document.getElementById('btn-export-excel').addEventListener('click', exportExcel);
 
     updateXPSummary();
 }
@@ -969,36 +967,6 @@ async function importExcel() {
         );
     } catch (err) {
         toast('Import impossible : ' + err.message, 'error');
-    }
-}
-
-function exportExcel() {
-    try {
-        if (typeof XLSX === 'undefined') { toast("La bibliothèque Excel n'est pas chargée.", 'error'); return; }
-
-        const rows = [['Catégorie', 'Sous-catégories', 'Objectif', 'Description', 'XP', 'Complété', 'Date']];
-        for (const [catName, root] of Object.entries(data.categories)) {
-            walkWithPath(root, [catName], (o, path) => {
-                rows.push([
-                    path[0],
-                    path.slice(1).join(' › '),
-                    o.name,
-                    o.description || '',
-                    o.xp,
-                    o.completed ? 'Oui' : 'Non',
-                    o.date || ''
-                ]);
-            });
-        }
-
-        const ws = XLSX.utils.aoa_to_sheet(rows);
-        ws['!cols'] = [{ wch: 18 }, { wch: 26 }, { wch: 40 }, { wch: 40 }, { wch: 8 }, { wch: 10 }, { wch: 12 }];
-        const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, 'Objectifs');
-        XLSX.writeFile(wb, 'objectifs.xlsx');
-        toast('Export téléchargé 📤', 'success');
-    } catch (err) {
-        toast('Export impossible : ' + err.message, 'error');
     }
 }
 
