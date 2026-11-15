@@ -14,6 +14,9 @@
 
     <!-- Supabase (chargé une seule fois — il était en double avant) -->
     <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+    <!-- SheetJS : lecture/écriture de fichiers Excel (import/export) -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 </head>
 <body>
     <div class="container">
@@ -29,8 +32,11 @@
             <div class="tab-content">
                 <div class="categories" id="categories"></div>
                 <div class="add-category">
-                    <input type="text" id="new-category" placeholder="Nouvelle catégorie" maxlength="50">
-                    <button id="btn-add-category" class="btn btn-primary btn-plus" title="Ajouter la catégorie">+</button>
+                    <span class="add-category-title">Nouvelle catégorie</span>
+                    <div class="add-category-row">
+                        <input type="text" id="new-category" placeholder="Nom de la catégorie" maxlength="50">
+                        <button id="btn-add-category" class="btn btn-primary btn-plus" title="Ajouter la catégorie">+</button>
+                    </div>
                 </div>
             </div>
 
