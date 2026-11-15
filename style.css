@@ -697,13 +697,6 @@ textarea:focus {
 .form-row input { flex: 1; min-width: 140px; }
 .form-row input[type="number"] { max-width: 120px; flex: 0 1 120px; }
 
-.hint {
-    color: var(--text-secondary);
-    font-size: 0.85em;
-    text-align: center;
-    margin-top: 18px;
-}
-
 /* ============================================================
    SYNTHÈSE
    ============================================================ */
@@ -930,13 +923,17 @@ textarea:focus {
     border-bottom: 1px solid rgba(139, 92, 246, 0.5);
 }
 
-/* Croix blanche, bien lisible sur le dégradé violet */
+/* Croix blanche, bien lisible sur le dégradé violet (taille réduite
+   pour tenir dans la barre latérale) */
 .btn-plus {
-    font-size: 1.25em;
+    font-size: 1.05em;
     font-weight: 800;
-    padding: 7px 15px;
+    padding: 7px 11px;
     line-height: 1;
+    flex-shrink: 0;
 }
+
+.add-category-row input { min-width: 0; }
 
 /* ============================================================
    ANIMATIONS
