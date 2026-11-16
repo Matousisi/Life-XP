@@ -530,26 +530,32 @@ textarea:focus {
    ============================================================ */
 .category-toolbar { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 20px; }
 
+/* Sous-catégories : grille de cartes avec liseré violet */
 .subcategories-summary {
-    background: var(--bg-elevated);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 14px;
-    margin-bottom: 18px;
-    backdrop-filter: blur(10px);
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 14px;
+    margin-bottom: 6px;
 }
 
 .subcategory-card {
-    background: var(--bg-elevated-2);
+    background: var(--bg-elevated);
     border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
     border-radius: 12px;
     padding: 14px;
-    margin-bottom: 10px;
+    margin-bottom: 0;
     cursor: pointer;
-    transition: transform 0.2s, border-color 0.2s;
+    transition: transform 0.2s, border-color 0.2s, box-shadow 0.2s;
+    backdrop-filter: blur(10px);
 }
 
-.subcategory-card:hover { transform: translateY(-2px); border-color: rgba(139, 92, 246, 0.45); }
+.subcategory-card:hover {
+    transform: translateY(-3px);
+    border-color: rgba(139, 92, 246, 0.5);
+    border-left-color: var(--accent-2);
+    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.35);
+}
 
 .subcategory-card-head {
     display: flex;
@@ -570,13 +576,12 @@ textarea:focus {
 /* ============================================================
    OBJECTIFS
    ============================================================ */
+/* Objectifs : cartes individuelles empilées, liseré coloré */
 .objectives {
-    background: var(--bg-elevated);
-    border: 1px solid var(--border);
-    padding: 14px;
-    border-radius: var(--radius);
-    margin-bottom: 18px;
-    backdrop-filter: blur(10px);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 6px;
 }
 
 .objective {
@@ -584,21 +589,32 @@ textarea:focus {
     justify-content: space-between;
     align-items: center;
     gap: 12px;
-    padding: 12px;
-    border: 1px solid transparent;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
     border-radius: 12px;
-    background: var(--bg-elevated-2);
-    transition: background-color 0.2s, border-color 0.2s;
+    background: var(--bg-elevated);
+    transition: background-color 0.2s, border-color 0.2s, transform 0.2s;
+    backdrop-filter: blur(10px);
 }
 
-.objective + .objective { margin-top: 10px; }
-
-.objective:hover { background: rgba(255, 255, 255, 0.11); }
+.objective:hover {
+    background: var(--bg-elevated-2);
+    border-left-color: var(--accent-2);
+    transform: translateX(2px);
+}
 
 .objective.completed {
     background: var(--completed-bg);
     border-color: rgba(34, 197, 94, 0.25);
+    border-left-color: var(--success-color);
     opacity: 0.92;
+}
+
+/* Titre barré quand l'objectif est complété */
+.objective.completed .objective-name {
+    text-decoration: line-through;
+    text-decoration-color: rgba(134, 239, 172, 0.6);
 }
 
 .objective-image {
@@ -641,7 +657,22 @@ textarea:focus {
 
 .completed-date { font-size: 0.8em; color: #86efac; font-style: italic; }
 
-.objective-actions { display: flex; gap: 6px; align-items: center; flex-shrink: 0; }
+/* Actions discrètes au repos, pleines au survol
+   (toujours visibles sur écran tactile) */
+.objective-actions {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    flex-shrink: 0;
+    opacity: 0.45;
+    transition: opacity 0.2s;
+}
+
+.objective:hover .objective-actions { opacity: 1; }
+
+@media (hover: none) {
+    .objective-actions { opacity: 1; }
+}
 
 /* ============================================================
    FORMULAIRES (cartes)
