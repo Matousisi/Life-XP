@@ -567,12 +567,8 @@ function renderNodeView() {
     const main = document.querySelector('.main');
     main.innerHTML = headerHTML(`<span class="crumbs">${crumbs}</span>`, { back: true }) + `
         <div class="category-toolbar">
-            ${isCategory ? `<button class="btn btn-ghost" id="btn-edit-image">🖼️ Changer l'image</button>` : ''}
-            <button class="btn btn-ghost" id="btn-rename-node">✏️ Renommer</button>
-            <button class="btn btn-danger-ghost" id="btn-delete-node">🗑️ Supprimer</button>
             <button class="btn btn-primary" id="btn-new-objective" title="Créer un nouvel objectif">+ Objectif</button>
             <button class="btn btn-ghost" id="btn-new-subcategory" title="Créer une nouvelle sous-catégorie">+ Sous-catégorie</button>
-            <button class="btn btn-ghost btn-sm" id="btn-import-excel" title="Importer des objectifs depuis un fichier Excel (colonnes : Nom, XP)">📥 Importer Excel</button>
         </div>
         <h3 class="section-title">Sous-catégories <span class="section-count">${childrenNames.length}</span></h3>
         <div class="subcategories-summary" id="children-summary"></div>
@@ -649,10 +645,6 @@ function renderNodeView() {
         renderMain();
         renderSidebar();
     });
-    document.getElementById('btn-rename-node').addEventListener('click', () => renameNode(path));
-    document.getElementById('btn-delete-node').addEventListener('click', () => deleteNode(path));
-    const imgBtn = document.getElementById('btn-edit-image');
-    if (imgBtn) imgBtn.addEventListener('click', () => editCategoryImage(path[0]));
 
     // Fil d'Ariane : remonter à un ancêtre
     main.querySelectorAll('.crumb').forEach(crumb => {
@@ -663,10 +655,9 @@ function renderNodeView() {
         });
     });
 
-    // ---- Boutons d'ajout (modales) et Excel ----
+    // ---- Boutons d'ajout (modales) ----
     document.getElementById('btn-new-objective').addEventListener('click', () => openObjectiveModal(path));
     document.getElementById('btn-new-subcategory').addEventListener('click', () => openSubCategoryModal(path));
-    document.getElementById('btn-import-excel').addEventListener('click', importExcel);
 
     updateXPSummary();
 }
@@ -735,8 +726,8 @@ function renderSidebarNode(name, path, depth, parentEl) {
             <h3>${escapeHtml(name)}</h3>
         </span>
         <div class="header-actions">
-            <button class="icon-btn add" title="Nouvelle sous-catégorie">➕</button>
-            <button class="icon-btn edit" title="Renommer">✏️</button>
+            <button class="icon-btn add" title="Ajouter une sous-catégorie">➕</button>
+            <button class="icon-btn edit" title="Modifier">✏️</button>
             <button class="icon-btn delete" title="Supprimer">🗑️</button>
         </div>`;
 
@@ -748,7 +739,7 @@ function renderSidebarNode(name, path, depth, parentEl) {
                 // Ouvre la modale de création, même sans naviguer
                 openSubCategoryModal(path);
             } else if (btn.classList.contains('edit')) {
-                renameNode(path);
+                editNodeModal(path);
             } else if (btn.classList.contains('delete')) {
                 deleteNode(path);
             }
@@ -816,31 +807,67 @@ async function addChild(path, value) {
     toast(`Sous-catégorie « ${name} » créée 🎉`, 'success');
 }
 
-// Renomme un nœud à n'importe quel niveau
-async function renameNode(path) {
+// ------------------------------------------------------------
+//  MODIFIER un nœud (renommage + image pour les catégories)
+//  C'est le bouton ✏️ « Modifier » du menu latéral.
+// ------------------------------------------------------------
+async function editNodeModal(path) {
+    const node = getNode(path);
+    if (!node) return;
     const oldName = path[path.length - 1];
     const isCategory = path.length === 1;
-    const newName = await showPrompt(isCategory ? 'Renommer la catégorie' : 'Renommer la sous-catégorie', {
-        label: 'Nouveau nom',
-        value: oldName,
-        placeholder: oldName
+
+    const result = await showModal({
+        title: isCategory ? 'Modifier la catégorie' : 'Modifier la sous-catégorie',
+        bodyHTML: `
+            <label>Nom</label>
+            <input type="text" id="edit-node-name" value="${escapeHtml(oldName)}" maxlength="50">
+            ${isCategory ? `
+                <p class="modal-hint">Image de la catégorie : depuis ton appareil (envoyée dans Supabase Storage) ou par URL. Laisse les deux champs vides pour retirer l'image.</p>
+                <label>Nouvelle image (depuis ton appareil)</label>
+                <input type="file" id="modal-file" accept="image/*">
+                <label>Ou par URL</label>
+                <input type="text" id="modal-url" placeholder="https://… ou images/mon-image.png" value="${escapeHtml(node.image || '')}">` : ''}`,
+        confirmText: 'Enregistrer',
+        onConfirm: async () => {
+            const name = document.getElementById('edit-node-name').value.trim();
+            if (!name) { toast('Le nom ne peut pas être vide.', 'error'); return false; }
+
+            const parent = isCategory ? data.categories : getNode(path.slice(0, -1)).children;
+            if (name !== oldName && parent[name]) { toast('Ce nom existe déjà ici.', 'error'); return false; }
+
+            let image = node.image;
+            if (isCategory) {
+                const file = document.getElementById('modal-file').files[0];
+                const url = document.getElementById('modal-url').value.trim();
+                try {
+                    if (file) image = await uploadImage(file);
+                    else image = url || null;
+                } catch (err) {
+                    toast("Envoi de l'image impossible : " + err.message, 'error');
+                    return false;
+                }
+            }
+            return { name, image };
+        }
     });
-    if (!newName || newName === oldName) return;
+    if (!result) return;
 
-    const parent = isCategory ? data.categories : getNode(path.slice(0, -1)).children;
-    if (parent[newName]) { toast('Ce nom existe déjà ici.', 'error'); return; }
+    // Renommage (en conservant l'ordre des éléments)
+    if (result.name !== oldName) {
+        const parent = isCategory ? data.categories : getNode(path.slice(0, -1)).children;
+        const rebuilt = Object.fromEntries(
+            Object.entries(parent).map(([k, v]) => [k === oldName ? result.name : k, v])
+        );
+        if (isCategory) data.categories = rebuilt;
+        else getNode(path.slice(0, -1)).children = rebuilt;
+        currentPath = [...path.slice(0, -1), result.name];
+    }
+    if (isCategory) data.categories[result.name].image = result.image;
 
-    // On reconstruit l'objet pour conserver l'ordre
-    const rebuilt = Object.fromEntries(
-        Object.entries(parent).map(([k, v]) => [k === oldName ? newName : k, v])
-    );
-    if (isCategory) data.categories = rebuilt;
-    else getNode(path.slice(0, -1)).children = rebuilt;
-
-    currentPath = [...path.slice(0, -1), newName];
     await saveData();
     refreshAll();
-    toast('Renommé ✨', 'success');
+    toast('Modifications enregistrées ✨', 'success');
 }
 
 // Supprime un nœud (et toute sa descendance)
@@ -867,115 +894,6 @@ async function deleteNode(path) {
     await saveData();
     refreshAll();
     toast('Supprimé', 'success');
-}
-
-// ------------------------------------------------------------
-//  Image d'une catégorie (upload Supabase Storage ou URL)
-// ------------------------------------------------------------
-async function editCategoryImage(category) {
-    const current = data.categories[category].image || '';
-    const result = await showModal({
-        title: '🖼️ Image de la catégorie',
-        bodyHTML: `
-            <p class="modal-hint">Choisis une image depuis ton appareil (envoyée dans Supabase Storage) ou colle une URL. Laisse tout vide pour retirer l'image.</p>
-            <label>Depuis ton appareil</label>
-            <input type="file" id="modal-file" accept="image/*">
-            <label>Ou par URL</label>
-            <input type="text" id="modal-url" placeholder="https://… ou images/mon-image.png" value="${escapeHtml(current)}">`,
-        confirmText: 'Enregistrer',
-        onConfirm: async () => {
-            const file = document.getElementById('modal-file').files[0];
-            const url = document.getElementById('modal-url').value.trim();
-            try {
-                if (file) return { image: await uploadImage(file) };
-                return { image: url || null };
-            } catch (err) {
-                toast('Envoi impossible : ' + err.message, 'error');
-                return false;
-            }
-        }
-    });
-    if (!result) return;
-
-    data.categories[category].image = result.image;
-    await saveData();
-    refreshAll();
-    toast('Image mise à jour 🖼️', 'success');
-}
-
-// ------------------------------------------------------------
-//  IMPORT / EXPORT EXCEL (noms + XP)
-//  Import : colonnes « Nom » et « XP » (ou les 2 premières
-//  colonnes du fichier, avec ou sans ligne d'en-tête).
-//  Export : fichier .xlsx listant tous les objectifs de l'arbre.
-// ------------------------------------------------------------
-async function importExcel() {
-    if (typeof XLSX === 'undefined') { toast("La bibliothèque Excel n'est pas chargée.", 'error'); return; }
-    if (currentPath.length === 0) { toast("Ouvre d'abord la catégorie ou sous-catégorie cible.", 'error'); return; }
-
-    const picked = await showModal({
-        title: '📥 Importer des objectifs (Excel)',
-        bodyHTML: `
-            <p class="modal-hint">Sélectionne un fichier .xlsx, .xls ou .csv. Chaque ligne doit contenir un nom et un XP (colonnes « Nom » et « XP », ou simplement les deux premières colonnes). Les objectifs seront ajoutés dans « ${escapeHtml(currentPath[currentPath.length - 1])} ».</p>
-            <label>Fichier</label>
-            <input type="file" id="modal-file" accept=".xlsx,.xls,.csv">`,
-        confirmText: 'Importer',
-        onConfirm: () => {
-            const f = document.getElementById('modal-file').files[0];
-            if (!f) { toast('Choisis un fichier.', 'error'); return false; }
-            return { file: f };
-        }
-    });
-    if (!picked) return;
-
-    try {
-        const buffer = await picked.file.arrayBuffer();
-        const workbook = XLSX.read(buffer);
-        const sheet = workbook.Sheets[workbook.SheetNames[0]];
-        const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
-        if (!rows.length) { toast('Le fichier est vide.', 'error'); return; }
-
-        // Détection des colonnes Nom / XP (avec ou sans ligne d'en-tête)
-        let nameCol = 0, xpCol = 1, startRow = 0;
-        const headerRow = rows[0].map(c => String(c).toLowerCase());
-        const nameIdx = headerRow.findIndex(c => /^(nom|name|objectif|titre|title)/.test(c.trim()));
-        const xpIdx = headerRow.findIndex(c => /^(xp|points)/.test(c.trim()));
-        if (nameIdx !== -1 && xpIdx !== -1) { nameCol = nameIdx; xpCol = xpIdx; startRow = 1; }
-
-        const node = getNode(currentPath);
-        let added = 0, skipped = 0;
-        for (let i = startRow; i < rows.length; i++) {
-            const row = rows[i];
-            const name = String(row[nameCol] ?? '').trim();
-            if (!name) { skipped++; continue; }
-            let xp = parseInt(row[xpCol], 10);
-            if (isNaN(xp) || xp < 0) xp = 100;
-            if (xp > 1000) xp = 1000;
-            node.objectives.push({ name, description: '', xp, completed: false, date: null, image: null });
-            added++;
-        }
-
-        if (added > 0) {
-            await saveData();
-            renderNodeView();
-        }
-        toast(
-            added > 0
-                ? `${added} objectif(s) importé(s) 🎉${skipped ? ` (${skipped} ligne(s) ignorée(s))` : ''}`
-                : 'Aucun objectif trouvé dans le fichier.',
-            added > 0 ? 'success' : 'error'
-        );
-    } catch (err) {
-        toast('Import impossible : ' + err.message, 'error');
-    }
-}
-
-// Parcourt l'arbre en transmettant le chemin complet de chaque objectif
-function walkWithPath(node, path, fn) {
-    (node.objectives || []).forEach(o => fn(o, path));
-    for (const [name, child] of Object.entries(node.children || {})) {
-        walkWithPath(child, [...path, name], fn);
-    }
 }
 
 // ============================================================
