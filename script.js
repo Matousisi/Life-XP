@@ -620,18 +620,28 @@ function renderNodeView() {
         const descHTML = objective.description
             ? `<span class="objective-desc">${escapeHtml(objective.description)}</span>`
             : '';
+        const canMoveUp = index > 0;
+        const canMoveDown = index < node.objectives.length - 1;
         el.innerHTML = `
             ${imageHTML}
             <div class="objective-text">
-                <span class="objective-name">${escapeHtml(objective.name)} <span class="xp-tag">+${objective.xp}&nbsp;XP</span></span>
+                <span class="objective-title-row">
+                    <span class="objective-name">${escapeHtml(objective.name)}</span>
+                    <span class="xp-tag">+${objective.xp}&nbsp;XP</span>
+                </span>
                 ${descHTML}
                 ${objective.completed ? `<span class="completed-date">✅ Complété le ${escapeHtml(objective.date || '?')}</span>` : ''}
             </div>
             <div class="objective-actions">
+                ${canMoveUp ? '<button class="icon-btn move" title="Monter">▲</button>' : ''}
+                ${canMoveDown ? '<button class="icon-btn move" title="Descendre">▼</button>' : ''}
                 <button class="icon-btn edit" title="Modifier">✏️</button>
                 <button class="icon-btn complete" title="${objective.completed ? 'Remettre en non terminé' : 'Marquer comme complété'}">${objective.completed ? '↩️' : '✅'}</button>
                 <button class="icon-btn delete" title="Supprimer">🗑️</button>
             </div>`;
+        el.querySelectorAll('.move').forEach(btn => {
+            btn.addEventListener('click', () => moveObjective(path, index, btn.textContent.trim() === '▲' ? -1 : 1));
+        });
         el.querySelector('.complete').addEventListener('click', () => completeObjective(path, index));
         el.querySelector('.delete').addEventListener('click', () => deleteObjective(path, index));
         el.querySelector('.edit').addEventListener('click', () => editObjective(path, index));
@@ -1021,6 +1031,19 @@ async function deleteObjective(path, index) {
     await saveData();
     renderNodeView();
     toast('Objectif supprimé', 'success');
+}
+
+// Réordonne un objectif (tri manuel avec les flèches ▲▼)
+async function moveObjective(path, index, direction) {
+    const node = getNode(path);
+    if (!node) return;
+    const newIndex = index + direction;
+    if (newIndex < 0 || newIndex >= node.objectives.length) return;
+
+    const [objective] = node.objectives.splice(index, 1);
+    node.objectives.splice(newIndex, 0, objective);
+    await saveData();
+    renderNodeView();
 }
 
 // ============================================================
