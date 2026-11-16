@@ -603,7 +603,7 @@ function renderNodeView() {
             renderMain();
             renderSidebar();
         });
-        card.querySelector('.edit').addEventListener('click', (e) => { e.stopPropagation(); renameNode([...path, childName]); });
+        card.querySelector('.edit').addEventListener('click', (e) => { e.stopPropagation(); editNodeModal([...path, childName]); });
         card.querySelector('.delete').addEventListener('click', (e) => { e.stopPropagation(); deleteNode([...path, childName]); });
         childrenSummary.appendChild(card);
     }
@@ -823,7 +823,6 @@ async function editNodeModal(path) {
             <label>Nom</label>
             <input type="text" id="edit-node-name" value="${escapeHtml(oldName)}" maxlength="50">
             ${isCategory ? `
-                <p class="modal-hint">Image de la catégorie : depuis ton appareil (envoyée dans Supabase Storage) ou par URL. Laisse les deux champs vides pour retirer l'image.</p>
                 <label>Nouvelle image (depuis ton appareil)</label>
                 <input type="file" id="modal-file" accept="image/*">
                 <label>Ou par URL</label>
