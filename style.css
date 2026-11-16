@@ -232,6 +232,7 @@ body {
 .icon-btn.delete:hover { color: var(--danger-color); background: rgba(239, 68, 68, 0.12); }
 .icon-btn.add:hover { color: var(--success-color); background: rgba(34, 197, 94, 0.12); }
 .icon-btn.complete:hover { color: var(--success-color); background: rgba(34, 197, 94, 0.12); }
+.icon-btn.move:hover { color: var(--accent-2); background: rgba(34, 211, 238, 0.12); }
 
 /* ---- Formulaire d'ajout de catégorie (bloc distinct) ---- */
 .add-category {
@@ -630,6 +631,14 @@ textarea:focus {
 .objective-text { display: flex; flex-direction: column; gap: 5px; min-width: 0; flex: 1; }
 
 .objective-name { font-weight: 500; overflow-wrap: anywhere; }
+
+/* Titre + badge XP : espacés pour une meilleure lisibilité */
+.objective-title-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
 
 /* Description de l'objectif (sous le titre) */
 .objective-desc {
